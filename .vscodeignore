@@ -10,3 +10,10 @@ vsc-extension-quickstart.md
 **/*.vsix
 **/.DS_Store
 install.sh
+publish.sh
+create-icon.sh
+ninja-icon-description.txt
+ninja-server.svg
+ninja.png
+RECENT-CHANGES.md
+.git/**

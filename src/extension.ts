@@ -5,7 +5,6 @@ import { ServerConfigManager, ServerConfig } from "./serverConfig";
 let terminals: { [key: string]: vscode.Terminal } = {};
 let serverProvider: ServerRunnerProvider;
 let configManager: ServerConfigManager;
-let isFirstViewAccess = true;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("🥷 Ninja Runner extension is now active!");
@@ -17,22 +16,39 @@ export function activate(context: vscode.ExtensionContext) {
   serverProvider = new ServerRunnerProvider();
   vscode.window.registerTreeDataProvider("serverRunnerView", serverProvider);
 
-  // Auto-start servers ONLY when the view is accessed for the first time
+  // Auto-start servers and show sidebar every time the view is focused (activity bar icon clicked)
   const onViewVisible = vscode.commands.registerCommand(
     "serverRunnerView.focus",
-    () => {
-      if (isFirstViewAccess) {
-        setTimeout(() => {
-          autoStartAllServersOnActivation();
-          isFirstViewAccess = false;
-        }, 100);
-      }
+    async () => {
+      // Start all servers immediately
+      setTimeout(() => {
+        autoStartAllServersOnActivation();
+      }, 100);
+      
+      // Ensure the server runner view is visible in the activity bar
+      await vscode.commands.executeCommand('workbench.view.extension.serverRunner');
+    }
+  );
+
+  // Command specifically for activity bar icon click
+  const onActivityBarClick = vscode.commands.registerCommand(
+    "serverRunner.showView",
+    async () => {
+      // Start all servers immediately
+      autoStartAllServersOnActivation();
+      
+      // Show the server runner view in the sidebar
+      await vscode.commands.executeCommand('workbench.view.extension.serverRunner');
+      
+      // Focus on the specific view
+      await vscode.commands.executeCommand('serverRunnerView.focus');
     }
   );
 
   // Register commands
   const disposables = [
     onViewVisible,
+    onActivityBarClick,
 
     vscode.commands.registerCommand("serverRunner.startFspFrontend", () => {
       console.log("🥷 FSP Frontend command triggered!");

@@ -4,7 +4,7 @@
   "description": "⚡ Lightning-fast server runner for FSP and HRMS frontend/backend by akhilninja",
   "version": "0.0.1",
   "publisher": "akhilninja",
-  "icon": "ninja.png",
+  "icon": "ninja-server-icon.png",
   "engines": {
     "vscode": "^1.103.0"
   },
@@ -50,14 +50,20 @@
         {
           "id": "serverRunner",
           "title": "🥷 Ninja Runner",
-          "icon": "$(symbol-misc)"
+          "icon": "$(combine)"
         }
       ]
     },
     "commands": [
       {
+        "command": "serverRunner.showView",
+        "title": "Show Ninja Runner",
+        "icon": "$(combine)"
+      },
+      {
         "command": "serverRunnerView.focus",
-        "title": "Focus Server Runner View"
+        "title": "Focus Server Runner View",
+        "icon": "$(eye)"
       },
       {
         "command": "serverRunner.startFspFrontend",

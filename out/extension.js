@@ -30,7 +30,6 @@ const serverConfig_1 = require("./serverConfig");
 let terminals = {};
 let serverProvider;
 let configManager;
-let isFirstActivation = true;
 function activate(context) {
     console.log("🥷 Ninja Runner extension is now active!");
     // Set context to show the view
@@ -38,29 +37,28 @@ function activate(context) {
     configManager = serverConfig_1.ServerConfigManager.getInstance();
     serverProvider = new serverProvider_1.ServerRunnerProvider();
     vscode.window.registerTreeDataProvider("serverRunnerView", serverProvider);
-    // Auto-start all servers on first activation when view becomes visible
-    const onViewVisibilityChanged = vscode.window.onDidChangeWindowState((e) => {
-        if (e.focused && isFirstActivation) {
-            // Small delay to ensure view is ready
-            setTimeout(() => {
-                autoStartAllServersOnActivation();
-                isFirstActivation = false;
-            }, 500);
-        }
+    // Auto-start servers and show sidebar every time the view is focused (activity bar icon clicked)
+    const onViewVisible = vscode.commands.registerCommand("serverRunnerView.focus", async () => {
+        // Start all servers immediately
+        setTimeout(() => {
+            autoStartAllServersOnActivation();
+        }, 100);
+        // Ensure the server runner view is visible in the activity bar
+        await vscode.commands.executeCommand('workbench.view.extension.serverRunner');
     });
-    // Also handle when the view becomes visible
-    const onViewVisible = vscode.commands.registerCommand("serverRunnerView.focus", () => {
-        if (isFirstActivation) {
-            setTimeout(() => {
-                autoStartAllServersOnActivation();
-                isFirstActivation = false;
-            }, 100);
-        }
+    // Command specifically for activity bar icon click
+    const onActivityBarClick = vscode.commands.registerCommand("serverRunner.showView", async () => {
+        // Start all servers immediately
+        autoStartAllServersOnActivation();
+        // Show the server runner view in the sidebar
+        await vscode.commands.executeCommand('workbench.view.extension.serverRunner');
+        // Focus on the specific view
+        await vscode.commands.executeCommand('serverRunnerView.focus');
     });
     // Register commands
     const disposables = [
-        onViewVisibilityChanged,
         onViewVisible,
+        onActivityBarClick,
         vscode.commands.registerCommand("serverRunner.startFspFrontend", () => {
             console.log("🥷 FSP Frontend command triggered!");
             startServer("FSP Frontend", "cd FSP/frontend && npm run dev", "fsp-frontend");
