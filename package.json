@@ -1,0 +1,190 @@
+{
+  "name": "ninja-runner",
+  "displayName": "🥷 Ninja Runner",
+  "description": "⚡ Lightning-fast server runner for FSP and HRMS frontend/backend by akhilninja",
+  "version": "0.0.1",
+  "publisher": "akhilninja",
+  "icon": "ninja.png",
+  "engines": {
+    "vscode": "^1.103.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akhilninja/ninja-runner"
+  },
+  "homepage": "https://github.com/akhilninja/ninja-runner#readme",
+  "bugs": {
+    "url": "https://github.com/akhilninja/ninja-runner/issues"
+  },
+  "keywords": [
+    "ninja",
+    "server",
+    "runner",
+    "development",
+    "frontend",
+    "backend",
+    "FSP",
+    "HRMS",
+    "lightning",
+    "fast"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "views": {
+      "serverRunner": [
+        {
+          "id": "serverRunnerView",
+          "name": "🥷 Ninja Runner",
+          "when": "serverRunnerEnabled"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "serverRunner",
+          "title": "🥷 Ninja Runner",
+          "icon": "$(symbol-misc)"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "serverRunnerView.focus",
+        "title": "Focus Server Runner View"
+      },
+      {
+        "command": "serverRunner.startFspFrontend",
+        "title": "⚡ Launch FSP Frontend",
+        "icon": "$(run)"
+      },
+      {
+        "command": "serverRunner.startHrmsFrontend",
+        "title": "⚡ Launch HRMS Frontend",
+        "icon": "$(run)"
+      },
+      {
+        "command": "serverRunner.startFspBackend",
+        "title": "🥷 Start FSP Backend",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "serverRunner.startHrmsBackend",
+        "title": "🥷 Start HRMS Backend",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "serverRunner.stopAllServers",
+        "title": "🛑 Stop All Servers",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "serverRunner.startAllServers",
+        "title": "🚀 Start All Servers",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "serverRunner.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "serverRunner.addServer",
+        "title": "➕ Add New Server",
+        "icon": "$(add)"
+      },
+      {
+        "command": "serverRunner.editServer",
+        "title": "✏️ Edit Server",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "serverRunner.deleteServer",
+        "title": "🗑️ Delete Server",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "serverRunner.startDynamicServer",
+        "title": "▶️ Start Server",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "serverRunner.startAllServers",
+          "when": "view == serverRunnerView",
+          "group": "navigation"
+        },
+        {
+          "command": "serverRunner.addServer",
+          "when": "view == serverRunnerView",
+          "group": "navigation"
+        },
+        {
+          "command": "serverRunner.refresh",
+          "when": "view == serverRunnerView",
+          "group": "navigation"
+        },
+        {
+          "command": "serverRunner.stopAllServers",
+          "when": "view == serverRunnerView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "serverRunner.startFspFrontend",
+          "when": "view == serverRunnerView && viewItem == fspFrontend"
+        },
+        {
+          "command": "serverRunner.startHrmsFrontend",
+          "when": "view == serverRunnerView && viewItem == hrmsFrontend"
+        },
+        {
+          "command": "serverRunner.startFspBackend",
+          "when": "view == serverRunnerView && viewItem == fspBackend"
+        },
+        {
+          "command": "serverRunner.startHrmsBackend",
+          "when": "view == serverRunnerView && viewItem == hrmsBackend"
+        },
+        {
+          "command": "serverRunner.editServer",
+          "when": "view == serverRunnerView && viewItem",
+          "group": "inline"
+        },
+        {
+          "command": "serverRunner.deleteServer",
+          "when": "view == serverRunnerView && viewItem",
+          "group": "inline"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^16.18.126",
+    "@types/vscode": "^1.103.0",
+    "typescript": "^4.9.5"
+  },
+  "author": {
+    "name": "akhilninja",
+    "email": "akhil@example.com"
+  },
+  "license": "MIT",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  }
+}

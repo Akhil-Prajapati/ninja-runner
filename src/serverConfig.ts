@@ -1,0 +1,110 @@
+export interface ServerConfig {
+  id: string;
+  name: string;
+  type: 'frontend' | 'backend';
+  command: string;
+  workingDirectory: string;
+  emoji: string;
+  category: 'Frontend Servers' | 'Backend Servers';
+}
+
+export class ServerConfigManager {
+  private static instance: ServerConfigManager;
+  private servers: ServerConfig[] = [];
+
+  private constructor() {
+    this.loadDefaultServers();
+  }
+
+  public static getInstance(): ServerConfigManager {
+    if (!ServerConfigManager.instance) {
+      ServerConfigManager.instance = new ServerConfigManager();
+    }
+    return ServerConfigManager.instance;
+  }
+
+  private loadDefaultServers(): void {
+    this.servers = [
+      {
+        id: 'fsp-frontend',
+        name: 'FSP Frontend',
+        type: 'frontend',
+        command: 'cd FSP/frontend && npm run dev',
+        workingDirectory: 'FSP/frontend',
+        emoji: '🌐',
+        category: 'Frontend Servers'
+      },
+      {
+        id: 'hrms-frontend',
+        name: 'HRMS Frontend',
+        type: 'frontend',
+        command: 'cd HRMS/frontend && npm run dev',
+        workingDirectory: 'HRMS/frontend',
+        emoji: '🌐',
+        category: 'Frontend Servers'
+      },
+      {
+        id: 'fsp-backend',
+        name: 'FSP Backend',
+        type: 'backend',
+        command: 'cd FSP/backend && mvn spring-boot:run',
+        workingDirectory: 'FSP/backend',
+        emoji: '⚙️',
+        category: 'Backend Servers'
+      },
+      {
+        id: 'hrms-backend',
+        name: 'HRMS Backend',
+        type: 'backend',
+        command: 'cd HRMS/backend && mvn spring-boot:run',
+        workingDirectory: 'HRMS/backend',
+        emoji: '⚙️',
+        category: 'Backend Servers'
+      }
+    ];
+  }
+
+  public getServers(): ServerConfig[] {
+    return [...this.servers];
+  }
+
+  public getServerById(id: string): ServerConfig | undefined {
+    return this.servers.find(server => server.id === id);
+  }
+
+  public addServer(server: ServerConfig): void {
+    // Check if server with same ID already exists
+    const existingIndex = this.servers.findIndex(s => s.id === server.id);
+    if (existingIndex !== -1) {
+      this.servers[existingIndex] = server; // Update existing
+    } else {
+      this.servers.push(server); // Add new
+    }
+  }
+
+  public deleteServer(id: string): boolean {
+    const index = this.servers.findIndex(server => server.id === id);
+    if (index !== -1) {
+      this.servers.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  public getServersByCategory(category: string): ServerConfig[] {
+    return this.servers.filter(server => server.category === category);
+  }
+
+  public generateUniqueId(name: string): string {
+    const baseId = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    let id = baseId;
+    let counter = 1;
+    
+    while (this.servers.some(server => server.id === id)) {
+      id = `${baseId}-${counter}`;
+      counter++;
+    }
+    
+    return id;
+  }
+}
