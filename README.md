@@ -23,7 +23,7 @@
 
 - **FSP Frontend**: React/Next.js development server
 - **FSP Backend**: Spring Boot Maven application
-- **HRMS Frontend**: React/Next.js development server  
+- **HRMS Frontend**: React/Next.js development server
 - **HRMS Backend**: Spring Boot Maven application
 - **Custom Servers**: Add your own server configurations
 
