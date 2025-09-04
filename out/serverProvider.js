@@ -36,7 +36,7 @@ class ServerRunnerProvider {
     }
     initializeServerStatus() {
         const servers = this.configManager.getServers();
-        servers.forEach(server => {
+        servers.forEach((server) => {
             this.serverStatus[server.id] = false;
         });
     }
@@ -63,11 +63,11 @@ class ServerRunnerProvider {
         }
         if (element.label === "⚡ Frontend Servers") {
             const frontendServers = this.configManager.getServersByCategory("Frontend Servers");
-            return Promise.resolve(frontendServers.map(server => new ServerItem(`${server.emoji} ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", server.id, this.getServerStatus(server.id))));
+            return Promise.resolve(frontendServers.map((server) => new ServerItem(`🅵 ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", server.id, this.getServerStatus(server.id))));
         }
         if (element.label === "🥷 Backend Servers") {
             const backendServers = this.configManager.getServersByCategory("Backend Servers");
-            return Promise.resolve(backendServers.map(server => new ServerItem(`${server.emoji} ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", server.id, this.getServerStatus(server.id))));
+            return Promise.resolve(backendServers.map((server) => new ServerItem(`🅱️ ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", server.id, this.getServerStatus(server.id))));
         }
         return Promise.resolve([]);
     }

@@ -1,8 +1,8 @@
 {
   "name": "ninja-runner",
   "displayName": "🥷 Ninja Runner",
-  "description": "⚡ Lightning-fast server runner for FSP and HRMS frontend/backend by akhilninja",
-  "version": "0.0.1",
+  "description": "⚡ Universal development server runner - Auto-detect and run any frontend/backend projects",
+  "version": "0.1.0",
   "publisher": "akhilninja",
   "icon": "ninja-server-icon.png",
   "engines": {
@@ -26,10 +26,13 @@
     "development",
     "frontend",
     "backend",
-    "FSP",
-    "HRMS",
-    "lightning",
-    "fast"
+    "react",
+    "nextjs",
+    "spring-boot",
+    "maven",
+    "npm",
+    "universal",
+    "auto-detect"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -66,24 +69,29 @@
         "icon": "$(eye)"
       },
       {
-        "command": "serverRunner.startFspFrontend",
-        "title": "⚡ Launch FSP Frontend",
-        "icon": "$(run)"
+        "command": "serverRunner.autoDetectProjects",
+        "title": "🔍 Auto-Detect Projects",
+        "icon": "$(search)"
       },
       {
-        "command": "serverRunner.startHrmsFrontend",
-        "title": "⚡ Launch HRMS Frontend",
-        "icon": "$(run)"
+        "command": "serverRunner.setupProjects",
+        "title": "⚙️ Setup Projects",
+        "icon": "$(gear)"
       },
       {
-        "command": "serverRunner.startFspBackend",
-        "title": "🥷 Start FSP Backend",
-        "icon": "$(server-process)"
+        "command": "serverRunner.resetConfiguration",
+        "title": "🔄 Reset & Reconfigure",
+        "icon": "$(refresh)"
       },
       {
-        "command": "serverRunner.startHrmsBackend",
-        "title": "🥷 Start HRMS Backend",
-        "icon": "$(server-process)"
+        "command": "serverRunner.installDependencies",
+        "title": "📦 Install Dependencies",
+        "icon": "$(package)"
+      },
+      {
+        "command": "serverRunner.installAllDependencies",
+        "title": "📦 Install All Dependencies",
+        "icon": "$(package)"
       },
       {
         "command": "serverRunner.stopAllServers",
@@ -119,57 +127,76 @@
         "command": "serverRunner.startDynamicServer",
         "title": "▶️ Start Server",
         "icon": "$(play)"
+      },
+      {
+        "command": "serverRunner.showStatusBar",
+        "title": "📊 Show Status Bar",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "serverRunner.nextServer",
+        "title": "⏭️ Next Server",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "serverRunner.previousServer",
+        "title": "⏮️ Previous Server",
+        "icon": "$(arrow-left)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "serverRunner.autoDetectProjects",
+          "when": "view == serverRunnerView",
+          "group": "navigation@1"
+        },
+        {
           "command": "serverRunner.startAllServers",
           "when": "view == serverRunnerView",
-          "group": "navigation"
-        },
-        {
-          "command": "serverRunner.addServer",
-          "when": "view == serverRunnerView",
-          "group": "navigation"
-        },
-        {
-          "command": "serverRunner.refresh",
-          "when": "view == serverRunnerView",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "serverRunner.stopAllServers",
           "when": "view == serverRunnerView",
-          "group": "navigation"
+          "group": "navigation@3"
+        },
+        {
+          "command": "serverRunner.resetConfiguration",
+          "when": "view == serverRunnerView",
+          "group": "settings@1"
+        },
+        {
+          "command": "serverRunner.refresh",
+          "when": "view == serverRunnerView",
+          "group": "settings@2"
         }
       ],
       "view/item/context": [
         {
-          "command": "serverRunner.startFspFrontend",
-          "when": "view == serverRunnerView && viewItem == fspFrontend"
-        },
-        {
-          "command": "serverRunner.startHrmsFrontend",
-          "when": "view == serverRunnerView && viewItem == hrmsFrontend"
-        },
-        {
-          "command": "serverRunner.startFspBackend",
-          "when": "view == serverRunnerView && viewItem == fspBackend"
-        },
-        {
-          "command": "serverRunner.startHrmsBackend",
-          "when": "view == serverRunnerView && viewItem == hrmsBackend"
+          "command": "serverRunner.installDependencies",
+          "when": "view == serverRunnerView && viewItem",
+          "group": "inline@1"
         },
         {
           "command": "serverRunner.editServer",
           "when": "view == serverRunnerView && viewItem",
-          "group": "inline"
+          "group": "inline@2"
         },
         {
           "command": "serverRunner.deleteServer",
           "when": "view == serverRunnerView && viewItem",
-          "group": "inline"
+          "group": "inline@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "serverRunner.addServer",
+          "when": "view == serverRunnerView"
+        },
+        {
+          "command": "serverRunner.installAllDependencies",
+          "when": "view == serverRunnerView"
         }
       ]
     }

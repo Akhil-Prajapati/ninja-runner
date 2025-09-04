@@ -25,7 +25,7 @@ export class ServerRunnerProvider
 
   private initializeServerStatus(): void {
     const servers = this.configManager.getServers();
-    servers.forEach(server => {
+    servers.forEach((server) => {
       this.serverStatus[server.id] = false;
     });
   }
@@ -67,28 +67,36 @@ export class ServerRunnerProvider
     }
 
     if (element.label === "⚡ Frontend Servers") {
-      const frontendServers = this.configManager.getServersByCategory("Frontend Servers");
+      const frontendServers =
+        this.configManager.getServersByCategory("Frontend Servers");
       return Promise.resolve(
-        frontendServers.map(server => new ServerItem(
-          `${server.emoji} ${server.name}`,
-          vscode.TreeItemCollapsibleState.None,
-          "server",
-          server.id,
-          this.getServerStatus(server.id)
-        ))
+        frontendServers.map(
+          (server) =>
+            new ServerItem(
+              `🅵 ${server.name}`,
+              vscode.TreeItemCollapsibleState.None,
+              "server",
+              server.id,
+              this.getServerStatus(server.id)
+            )
+        )
       );
     }
 
     if (element.label === "🥷 Backend Servers") {
-      const backendServers = this.configManager.getServersByCategory("Backend Servers");
+      const backendServers =
+        this.configManager.getServersByCategory("Backend Servers");
       return Promise.resolve(
-        backendServers.map(server => new ServerItem(
-          `${server.emoji} ${server.name}`,
-          vscode.TreeItemCollapsibleState.None,
-          "server",
-          server.id,
-          this.getServerStatus(server.id)
-        ))
+        backendServers.map(
+          (server) =>
+            new ServerItem(
+              `🅱️ ${server.name}`,
+              vscode.TreeItemCollapsibleState.None,
+              "server",
+              server.id,
+              this.getServerStatus(server.id)
+            )
+        )
       );
     }
 
@@ -113,13 +121,19 @@ export class ServerItem extends vscode.TreeItem {
     } else {
       // Dynamic icon based on server status
       if (isRunning) {
-        this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("charts.green"));
+        this.iconPath = new vscode.ThemeIcon(
+          "circle-filled",
+          new vscode.ThemeColor("charts.green")
+        );
         this.description = "🟢 Running";
       } else {
-        this.iconPath = new vscode.ThemeIcon("circle-outline", new vscode.ThemeColor("charts.red"));
+        this.iconPath = new vscode.ThemeIcon(
+          "circle-outline",
+          new vscode.ThemeColor("charts.red")
+        );
         this.description = "🔴 Stopped";
       }
-      
+
       // Set up single-click command for dynamic servers
       if (contextValue) {
         this.command = {

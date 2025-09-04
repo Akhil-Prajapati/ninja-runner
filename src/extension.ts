@@ -1,13 +1,21 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
 import { ServerRunnerProvider, ServerItem } from "./serverProvider";
 import { ServerConfigManager, ServerConfig } from "./serverConfig";
 
 let terminals: { [key: string]: vscode.Terminal } = {};
 let serverProvider: ServerRunnerProvider;
 let configManager: ServerConfigManager;
+let statusBarItems: vscode.StatusBarItem[] = [];
+let isAutoDetectDone = false;
+let extensionContext: vscode.ExtensionContext;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("🥷 Ninja Runner extension is now active!");
+
+  // Store extension context for persistence
+  extensionContext = context;
 
   // Set context to show the view
   vscode.commands.executeCommand("setContext", "serverRunnerEnabled", true);
@@ -16,17 +24,36 @@ export function activate(context: vscode.ExtensionContext) {
   serverProvider = new ServerRunnerProvider();
   vscode.window.registerTreeDataProvider("serverRunnerView", serverProvider);
 
+  // Load saved user preferences
+  loadUserPreferences();
+
+  // Auto-detect projects on first activation only if no saved preferences
+  if (!isAutoDetectDone && configManager.getServers().length === 0) {
+    setTimeout(() => {
+      autoDetectProjects();
+      isAutoDetectDone = true;
+    }, 1000);
+  }
+
   // Auto-start servers and show sidebar every time the view is focused (activity bar icon clicked)
   const onViewVisible = vscode.commands.registerCommand(
     "serverRunnerView.focus",
     async () => {
+      // Auto-detect if not done yet
+      if (!isAutoDetectDone) {
+        await autoDetectProjects();
+        isAutoDetectDone = true;
+      }
+
       // Start all servers immediately
       setTimeout(() => {
         autoStartAllServersOnActivation();
       }, 100);
-      
+
       // Ensure the server runner view is visible in the activity bar
-      await vscode.commands.executeCommand('workbench.view.extension.serverRunner');
+      await vscode.commands.executeCommand(
+        "workbench.view.extension.serverRunner"
+      );
     }
   );
 
@@ -34,14 +61,79 @@ export function activate(context: vscode.ExtensionContext) {
   const onActivityBarClick = vscode.commands.registerCommand(
     "serverRunner.showView",
     async () => {
+      // Auto-detect if not done yet
+      if (!isAutoDetectDone) {
+        await autoDetectProjects();
+        isAutoDetectDone = true;
+      }
+
       // Start all servers immediately
       autoStartAllServersOnActivation();
-      
+
       // Show the server runner view in the sidebar
-      await vscode.commands.executeCommand('workbench.view.extension.serverRunner');
-      
+      await vscode.commands.executeCommand(
+        "workbench.view.extension.serverRunner"
+      );
+
       // Focus on the specific view
-      await vscode.commands.executeCommand('serverRunnerView.focus');
+      await vscode.commands.executeCommand("serverRunnerView.focus");
+    }
+  );
+
+  // Auto-detect projects command
+  const autoDetectCommand = vscode.commands.registerCommand(
+    "serverRunner.autoDetectProjects",
+    () => {
+      autoDetectProjects();
+    }
+  );
+
+  // Reset configuration command
+  const resetConfigCommand = vscode.commands.registerCommand(
+    "serverRunner.resetConfiguration",
+    async () => {
+      const confirmation = await vscode.window.showWarningMessage(
+        "🔄 This will clear all current server configurations and let you reselect projects. Continue?",
+        { modal: true },
+        "Yes, Reset",
+        "Cancel"
+      );
+
+      if (confirmation === "Yes, Reset") {
+        // Clear saved preferences
+        extensionContext.workspaceState.update(
+          "ninja-runner-servers",
+          undefined
+        );
+        // Trigger auto-detection with user selection
+        await autoDetectProjects();
+      }
+    }
+  );
+
+  // Install dependencies command
+  const installDepsCommand = vscode.commands.registerCommand(
+    "serverRunner.installDependencies",
+    (item: ServerItem) => {
+      if (item.contextValue) {
+        installDependencies(item.contextValue);
+      }
+    }
+  );
+
+  // Install all dependencies command
+  const installAllDepsCommand = vscode.commands.registerCommand(
+    "serverRunner.installAllDependencies",
+    () => {
+      installAllDependencies();
+    }
+  );
+
+  // Status bar commands
+  const showStatusBarCommand = vscode.commands.registerCommand(
+    "serverRunner.showStatusBar",
+    () => {
+      createStatusBar();
     }
   );
 
@@ -49,42 +141,11 @@ export function activate(context: vscode.ExtensionContext) {
   const disposables = [
     onViewVisible,
     onActivityBarClick,
-
-    vscode.commands.registerCommand("serverRunner.startFspFrontend", () => {
-      console.log("🥷 FSP Frontend command triggered!");
-      startServer(
-        "FSP Frontend",
-        "cd FSP/frontend && npm run dev",
-        "fsp-frontend"
-      );
-    }),
-
-    vscode.commands.registerCommand("serverRunner.startHrmsFrontend", () => {
-      console.log("🥷 HRMS Frontend command triggered!");
-      startServer(
-        "HRMS Frontend",
-        "cd HRMS/frontend && npm run dev",
-        "hrms-frontend"
-      );
-    }),
-
-    vscode.commands.registerCommand("serverRunner.startFspBackend", () => {
-      console.log("🥷 FSP Backend command triggered!");
-      startServer(
-        "FSP Backend",
-        "cd FSP/backend && mvn spring-boot:run",
-        "fsp-backend"
-      );
-    }),
-
-    vscode.commands.registerCommand("serverRunner.startHrmsBackend", () => {
-      console.log("🥷 HRMS Backend command triggered!");
-      startServer(
-        "HRMS Backend",
-        "cd HRMS/backend && mvn spring-boot:run",
-        "hrms-backend"
-      );
-    }),
+    autoDetectCommand,
+    resetConfigCommand,
+    installDepsCommand,
+    installAllDepsCommand,
+    showStatusBarCommand,
 
     vscode.commands.registerCommand("serverRunner.stopAllServers", () => {
       stopAllServers();
@@ -138,6 +199,16 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function autoStartAllServersOnActivation() {
+  const servers = configManager.getServers();
+
+  if (servers.length === 0) {
+    vscode.window.showInformationMessage(
+      "🔍 No servers found. Auto-detecting projects..."
+    );
+    autoDetectProjects();
+    return;
+  }
+
   vscode.window.showInformationMessage("🥷 Ninja Auto-Starting All Servers...");
 
   // Show progress notification
@@ -148,37 +219,20 @@ function autoStartAllServersOnActivation() {
       cancellable: false,
     },
     async (progress) => {
-      progress.report({ increment: 0, message: "Starting FSP Frontend..." });
-      startServer(
-        "FSP Frontend",
-        "cd FSP/frontend && npm run dev",
-        "fsp-frontend"
-      );
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const totalServers = servers.length;
 
-      progress.report({ increment: 25, message: "Starting HRMS Frontend..." });
-      startServer(
-        "HRMS Frontend",
-        "cd HRMS/frontend && npm run dev",
-        "hrms-frontend"
-      );
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      for (let i = 0; i < servers.length; i++) {
+        const server = servers[i];
+        const percentage = Math.round(((i + 1) / totalServers) * 100);
 
-      progress.report({ increment: 50, message: "Starting FSP Backend..." });
-      startServer(
-        "FSP Backend",
-        "cd FSP/backend && mvn spring-boot:run",
-        "fsp-backend"
-      );
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        progress.report({
+          increment: percentage / totalServers,
+          message: `Starting ${server.name}...`,
+        });
 
-      progress.report({ increment: 75, message: "Starting HRMS Backend..." });
-      startServer(
-        "HRMS Backend",
-        "cd HRMS/backend && mvn spring-boot:run",
-        "hrms-backend"
-      );
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        startServer(server.name, server.command, server.id);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
 
       progress.report({ increment: 100, message: "All servers launched! 🥷" });
 
@@ -187,6 +241,7 @@ function autoStartAllServersOnActivation() {
           vscode.window.showInformationMessage(
             "🎯 All ninja servers are now running!"
           );
+          createStatusBar();
           resolve(undefined);
         }, 500);
       });
@@ -255,6 +310,7 @@ async function addNewServer() {
   };
 
   configManager.addServer(newServer);
+  saveUserPreferences();
   serverProvider.refresh();
 
   vscode.window.showInformationMessage(`🥷 Ninja added ${name} server!`);
@@ -302,6 +358,7 @@ async function editServer(serverId: string) {
   };
 
   configManager.addServer(updatedServer);
+  saveUserPreferences();
   serverProvider.refresh();
 
   vscode.window.showInformationMessage(`🥷 Ninja updated ${name} server!`);
@@ -330,6 +387,7 @@ async function deleteServer(serverId: string) {
     }
 
     configManager.deleteServer(serverId);
+    saveUserPreferences();
     serverProvider.refresh();
 
     vscode.window.showInformationMessage(
@@ -386,40 +444,28 @@ function startServer(name: string, command: string, terminalKey: string) {
 }
 
 function startAllServers() {
+  const servers = configManager.getServers();
+
+  if (servers.length === 0) {
+    vscode.window.showWarningMessage(
+      "No servers configured! Use auto-detect to find projects."
+    );
+    return;
+  }
+
   vscode.window.showInformationMessage("🚀 Ninja launching all servers...");
 
-  // Start all servers in sequence
-  setTimeout(() => {
-    startServer(
-      "FSP Frontend",
-      "cd FSP/frontend && npm run dev",
-      "fsp-frontend"
-    );
-  }, 100);
+  // Start all configured servers
+  servers.forEach((server, index) => {
+    setTimeout(() => {
+      startServer(server.name, server.command, server.id);
+    }, index * 100); // Stagger starts by 100ms each
+  });
 
+  // Create status bar after starting servers
   setTimeout(() => {
-    startServer(
-      "HRMS Frontend",
-      "cd HRMS/frontend && npm run dev",
-      "hrms-frontend"
-    );
-  }, 200);
-
-  setTimeout(() => {
-    startServer(
-      "FSP Backend",
-      "cd FSP/backend && mvn spring-boot:run",
-      "fsp-backend"
-    );
-  }, 300);
-
-  setTimeout(() => {
-    startServer(
-      "HRMS Backend",
-      "cd HRMS/backend && mvn spring-boot:run",
-      "hrms-backend"
-    );
-  }, 400);
+    createStatusBar();
+  }, 1000);
 }
 
 function stopAllServers() {
@@ -448,6 +494,634 @@ function stopAllServers() {
   );
 }
 
+// Auto-detect frontend and backend projects
+async function autoDetectProjects() {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders) {
+    vscode.window.showWarningMessage("No workspace folder found!");
+    return;
+  }
+
+  // Clear existing servers first
+  configManager.clearAllServers();
+
+  vscode.window.showInformationMessage("🔍 Auto-detecting projects...");
+
+  // First, scan and collect all potential projects
+  const detectedProjects: Array<{
+    name: string;
+    fullPath: string;
+    type: "frontend" | "backend";
+    framework: string;
+  }> = [];
+
+  for (const folder of workspaceFolders) {
+    await scanForProjectsWithCollection(folder.uri.fsPath, detectedProjects);
+  }
+
+  if (detectedProjects.length === 0) {
+    vscode.window.showWarningMessage(
+      "🥷 No projects detected in workspace!\n\n" +
+        "Make sure your workspace contains:\n" +
+        "• Frontend projects with package.json\n" +
+        "• Backend projects with pom.xml (Spring Boot)\n" +
+        "• Projects not in node_modules or build folders\n\n" +
+        "Check VS Code OUTPUT panel for scan details."
+    );
+
+    // Log workspace structure for debugging
+    console.log(
+      "Workspace folders:",
+      workspaceFolders.map((f) => f.uri.fsPath)
+    );
+
+    return;
+  }
+
+  // Show user selection dialog
+  const selectedProjects = await showProjectSelectionDialog(detectedProjects);
+
+  if (selectedProjects && selectedProjects.length > 0) {
+    // Add selected projects to configuration
+    for (const project of selectedProjects) {
+      await addDetectedProject(
+        project.name,
+        project.fullPath,
+        project.type,
+        project.framework
+      );
+    }
+
+    // Save user preferences
+    saveUserPreferences();
+
+    serverProvider.refresh();
+    vscode.window.showInformationMessage(
+      `✅ Added ${selectedProjects.length} selected projects as defaults!`
+    );
+  } else {
+    vscode.window.showInformationMessage("No projects selected.");
+  }
+}
+
+// Helper function to create meaningful project names
+function getProjectDisplayName(fullPath: string, folderName: string): string {
+  const pathParts = fullPath.split(path.sep);
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+
+  if (!workspaceFolders) {
+    return folderName;
+  }
+
+  // Find the workspace root
+  const workspaceRoot = workspaceFolders[0].uri.fsPath;
+  const relativePath = path.relative(workspaceRoot, fullPath);
+  const relativePathParts = relativePath.split(path.sep);
+
+  // If it's nested (like FSP/frontend), show parent folder name
+  if (relativePathParts.length > 1) {
+    const parentFolder = relativePathParts[relativePathParts.length - 2];
+    return `${parentFolder} ${folderName}`;
+  }
+
+  return folderName;
+}
+
+// Scan directory for frontend/backend projects and collect them
+async function scanForProjectsWithCollection(
+  basePath: string,
+  detectedProjects: Array<{
+    name: string;
+    fullPath: string;
+    type: "frontend" | "backend";
+    framework: string;
+  }>
+) {
+  try {
+    console.log("Scanning directory:", basePath);
+
+    const entries = await fs.promises.readdir(basePath, {
+      withFileTypes: true,
+    });
+
+    console.log(
+      "Found entries:",
+      entries.map((e) => e.name)
+    );
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        // Skip common directories that shouldn't be scanned
+        if (
+          entry.name === "node_modules" ||
+          entry.name === ".git" ||
+          entry.name === "target" ||
+          entry.name === "build" ||
+          entry.name === "built" ||
+          entry.name === "bin" ||
+          entry.name === "dist" ||
+          entry.name === ".vscode" ||
+          entry.name === ".idea" ||
+          entry.name.startsWith(".")
+        ) {
+          console.log("Skipping directory:", entry.name);
+          continue;
+        }
+
+        const fullPath = path.join(basePath, entry.name);
+        console.log("Checking project at:", fullPath);
+
+        // Track if we found a project to avoid duplicates
+        let foundProject = false;
+
+        // Check if this folder has frontend/backend subfolders (like FSP, HRMS, etc.)
+        try {
+          const subEntries = await fs.promises.readdir(fullPath, {
+            withFileTypes: true,
+          });
+
+          let hasFrontend = false;
+          let hasBackend = false;
+
+          // Look for frontend and backend subfolders
+          for (const subEntry of subEntries) {
+            if (subEntry.isDirectory()) {
+              if (
+                subEntry.name === "frontend" ||
+                subEntry.name.toLowerCase().includes("frontend")
+              ) {
+                hasFrontend = true;
+              }
+              if (
+                subEntry.name === "backend" ||
+                subEntry.name.toLowerCase().includes("backend")
+              ) {
+                hasBackend = true;
+              }
+            }
+          }
+
+          // If we found both frontend and backend, process them
+          if (hasFrontend || hasBackend) {
+            for (const subEntry of subEntries) {
+              if (subEntry.isDirectory()) {
+                const subPath = path.join(fullPath, subEntry.name);
+
+                // Check frontend subfolder
+                if (
+                  subEntry.name === "frontend" ||
+                  subEntry.name.toLowerCase().includes("frontend")
+                ) {
+                  if (await isReactProject(subPath)) {
+                    const projectName = `${entry.name} Frontend`;
+                    console.log("Found nested React project:", projectName);
+                    detectedProjects.push({
+                      name: projectName,
+                      fullPath: subPath,
+                      type: "frontend",
+                      framework: "React/Next.js",
+                    });
+                    foundProject = true;
+                  } else if (await isNodeProject(subPath)) {
+                    const projectName = `${entry.name} Frontend`;
+                    console.log("Found nested Node.js project:", projectName);
+                    detectedProjects.push({
+                      name: projectName,
+                      fullPath: subPath,
+                      type: "frontend",
+                      framework: "Node.js",
+                    });
+                    foundProject = true;
+                  }
+                }
+
+                // Check backend subfolder
+                if (
+                  subEntry.name === "backend" ||
+                  subEntry.name.toLowerCase().includes("backend")
+                ) {
+                  if (await isSpringBootProject(subPath)) {
+                    const projectName = `${entry.name} Backend`;
+                    console.log(
+                      "Found nested Spring Boot project:",
+                      projectName
+                    );
+                    detectedProjects.push({
+                      name: projectName,
+                      fullPath: subPath,
+                      type: "backend",
+                      framework: "Spring Boot",
+                    });
+                    foundProject = true;
+                  } else if (await isNodeProject(subPath)) {
+                    const projectName = `${entry.name} Backend`;
+                    console.log(
+                      "Found nested Node.js backend project:",
+                      projectName
+                    );
+                    detectedProjects.push({
+                      name: projectName,
+                      fullPath: subPath,
+                      type: "backend",
+                      framework: "Node.js",
+                    });
+                    foundProject = true;
+                  }
+                }
+              }
+            }
+          }
+        } catch (subError) {
+          console.log(`Cannot read subfolders of ${entry.name}:`, subError);
+        }
+
+        // Only check as direct project if we didn't find nested projects
+        if (!foundProject) {
+          if (await isReactProject(fullPath)) {
+            const projectName = `${getProjectDisplayName(
+              fullPath,
+              entry.name
+            )}`;
+            console.log("Found direct React project:", projectName);
+            detectedProjects.push({
+              name: projectName,
+              fullPath,
+              type: "frontend",
+              framework: "React/Next.js",
+            });
+            foundProject = true;
+          } else if (await isSpringBootProject(fullPath)) {
+            const projectName = `${getProjectDisplayName(
+              fullPath,
+              entry.name
+            )}`;
+            console.log("Found direct Spring Boot project:", projectName);
+            detectedProjects.push({
+              name: projectName,
+              fullPath,
+              type: "backend",
+              framework: "Spring Boot",
+            });
+            foundProject = true;
+          } else if (await isNodeProject(fullPath)) {
+            const projectName = `${getProjectDisplayName(
+              fullPath,
+              entry.name
+            )}`;
+            console.log("Found direct Node.js project:", projectName);
+            detectedProjects.push({
+              name: projectName,
+              fullPath,
+              type: "frontend",
+              framework: "Node.js",
+            });
+            foundProject = true;
+          }
+        }
+
+        // Continue scanning deeper only if we haven't found any projects and depth allows
+        if (!foundProject) {
+          const relativePath = path.relative(process.cwd(), basePath);
+          const depth = relativePath.split(path.sep).length;
+          const maxDepth = 4; // Reduced depth to prevent excessive scanning
+
+          if (depth < maxDepth) {
+            await scanForProjectsWithCollection(fullPath, detectedProjects);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error scanning projects in", basePath, ":", error);
+  }
+}
+
+// Show project selection dialog
+async function showProjectSelectionDialog(
+  detectedProjects: Array<{
+    name: string;
+    fullPath: string;
+    type: "frontend" | "backend";
+    framework: string;
+  }>
+): Promise<
+  | Array<{
+      name: string;
+      fullPath: string;
+      type: "frontend" | "backend";
+      framework: string;
+    }>
+  | undefined
+> {
+  // Create quick pick items
+  const quickPickItems = detectedProjects.map((project) => {
+    const emoji = project.type === "frontend" ? "🌐" : "⚙️";
+    const workspaceRoot =
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+    const relativePath = path.relative(workspaceRoot, project.fullPath);
+
+    return {
+      label: `${emoji} ${project.name}`,
+      description: `${project.framework} (${project.type})`,
+      detail: relativePath,
+      picked: true, // Default to selected
+      project: project,
+    };
+  });
+
+  const selectedItems = await vscode.window.showQuickPick(quickPickItems, {
+    canPickMany: true,
+    placeHolder:
+      "Select projects to add as default servers (these will auto-start)",
+    title: "🥷 Ninja Runner - Select Default Projects",
+  });
+
+  return selectedItems?.map((item) => item.project);
+}
+async function scanForProjects(basePath: string) {
+  try {
+    const entries = await fs.promises.readdir(basePath, {
+      withFileTypes: true,
+    });
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const fullPath = path.join(basePath, entry.name);
+
+        // Check if it's a frontend project
+        if (await isReactProject(fullPath)) {
+          await addDetectedProject(
+            entry.name,
+            fullPath,
+            "frontend",
+            "React/Next.js"
+          );
+        }
+        // Check if it's a backend project
+        else if (await isSpringBootProject(fullPath)) {
+          await addDetectedProject(
+            entry.name,
+            fullPath,
+            "backend",
+            "Spring Boot"
+          );
+        }
+        // Check if it's a Node.js project
+        else if (await isNodeProject(fullPath)) {
+          await addDetectedProject(entry.name, fullPath, "frontend", "Node.js");
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error scanning projects:", error);
+  }
+}
+
+// Check if directory is a React project
+async function isReactProject(projectPath: string): Promise<boolean> {
+  try {
+    const packageJsonPath = path.join(projectPath, "package.json");
+    console.log("Checking for React project at:", packageJsonPath);
+
+    if (fs.existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(
+        await fs.promises.readFile(packageJsonPath, "utf8")
+      );
+
+      const hasReact = !!(
+        packageJson.dependencies?.react ||
+        packageJson.devDependencies?.react ||
+        packageJson.dependencies?.next ||
+        packageJson.devDependencies?.next
+      );
+
+      console.log(
+        "React project check result:",
+        hasReact,
+        "Dependencies:",
+        Object.keys(packageJson.dependencies || {})
+      );
+      return hasReact;
+    }
+
+    console.log("No package.json found at:", packageJsonPath);
+  } catch (error) {
+    console.error("Error checking React project:", error);
+  }
+  return false;
+}
+
+// Check if directory is a Spring Boot project
+async function isSpringBootProject(projectPath: string): Promise<boolean> {
+  try {
+    const pomPath = path.join(projectPath, "pom.xml");
+    console.log("Checking for Spring Boot project at:", pomPath);
+
+    if (fs.existsSync(pomPath)) {
+      const pomContent = await fs.promises.readFile(pomPath, "utf8");
+      const hasSpringBoot = pomContent.includes("spring-boot");
+      console.log("Spring Boot project check result:", hasSpringBoot);
+      return hasSpringBoot;
+    }
+
+    console.log("No pom.xml found at:", pomPath);
+  } catch (error) {
+    console.error("Error checking Spring Boot project:", error);
+  }
+  return false;
+}
+
+// Check if directory is a Node.js project
+async function isNodeProject(projectPath: string): Promise<boolean> {
+  try {
+    const packageJsonPath = path.join(projectPath, "package.json");
+    console.log("Checking for Node.js project at:", packageJsonPath);
+
+    const exists = fs.existsSync(packageJsonPath);
+    console.log("Node.js project check result:", exists);
+    return exists;
+  } catch (error) {
+    console.error("Error checking Node.js project:", error);
+  }
+  return false;
+}
+
+// Add detected project to configuration
+async function addDetectedProject(
+  name: string,
+  fullPath: string,
+  type: "frontend" | "backend",
+  framework: string
+) {
+  const workspaceRoot =
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+  const relativePath = path.relative(workspaceRoot, fullPath);
+
+  let command = "";
+  let emoji = "";
+
+  if (type === "frontend") {
+    command = `cd ${relativePath} && npm run dev`;
+    emoji = "🌐";
+  } else {
+    command = `cd ${relativePath} && mvn spring-boot:run`;
+    emoji = "⚙️";
+  }
+
+  const id = configManager.generateUniqueId(name);
+  const category = type === "frontend" ? "Frontend Servers" : "Backend Servers";
+
+  const newServer: ServerConfig = {
+    id,
+    name: `${name} (${framework})`,
+    type,
+    command,
+    workingDirectory: relativePath,
+    emoji,
+    category: category as "Frontend Servers" | "Backend Servers",
+  };
+
+  // Check if already exists
+  const existing = configManager
+    .getServers()
+    .find((s) => s.name === newServer.name);
+  if (!existing) {
+    configManager.addServer(newServer);
+    console.log(`Added detected project: ${newServer.name}`);
+  }
+}
+
+// Install dependencies for a project
+async function installDependencies(serverId: string) {
+  const serverConfig = configManager.getServerById(serverId);
+  if (!serverConfig) {
+    vscode.window.showErrorMessage("Server not found!");
+    return;
+  }
+
+  const workspaceRoot =
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+  const projectPath = path.join(workspaceRoot, serverConfig.workingDirectory);
+
+  vscode.window.showInformationMessage(
+    `📦 Installing dependencies for ${serverConfig.name}...`
+  );
+
+  // Create terminal for dependency installation
+  const terminal = vscode.window.createTerminal({
+    name: `Install Dependencies - ${serverConfig.name}`,
+    cwd: projectPath,
+  });
+
+  terminal.show();
+
+  if (serverConfig.type === "frontend") {
+    // Check if package.json exists and install npm dependencies
+    const packageJsonPath = path.join(projectPath, "package.json");
+    if (fs.existsSync(packageJsonPath)) {
+      terminal.sendText("npm install");
+    }
+  } else if (serverConfig.type === "backend") {
+    // Check if pom.xml exists and install maven dependencies
+    const pomPath = path.join(projectPath, "pom.xml");
+    if (fs.existsSync(pomPath)) {
+      terminal.sendText("mvn clean install");
+    }
+  }
+}
+
+// Install all dependencies for all projects
+async function installAllDependencies() {
+  const servers = configManager.getServers();
+
+  if (servers.length === 0) {
+    vscode.window.showWarningMessage(
+      "No servers configured! Use auto-detect to find projects."
+    );
+    return;
+  }
+
+  vscode.window.showInformationMessage(
+    "📦 Installing dependencies for all projects..."
+  );
+
+  // Install dependencies for all servers
+  for (const server of servers) {
+    await installDependencies(server.id);
+    // Wait a bit between installations
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  vscode.window.showInformationMessage(
+    "✅ Dependencies installation started for all projects!"
+  );
+}
+
+// Create status bar with server controls
+function createStatusBar() {
+  // Clear existing status bar items
+  statusBarItems.forEach((item) => item.dispose());
+  statusBarItems = [];
+
+  const servers = configManager.getServers();
+  const runningCount = Object.keys(terminals).length;
+
+  // Main status item
+  const mainStatus = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    100
+  );
+  mainStatus.text = `🥷 Servers: ${runningCount}/${servers.length}`;
+  mainStatus.tooltip = "Ninja Runner - Click to open view";
+  mainStatus.command = "serverRunner.showView";
+  mainStatus.show();
+  statusBarItems.push(mainStatus);
+
+  // Start All button
+  const startAll = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    99
+  );
+  startAll.text = "$(play) Start All";
+  startAll.tooltip = "Start all servers";
+  startAll.command = "serverRunner.startAllServers";
+  startAll.show();
+  statusBarItems.push(startAll);
+
+  // Stop All button
+  const stopAll = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    98
+  );
+  stopAll.text = "$(stop) Stop All";
+  stopAll.tooltip = "Stop all servers";
+  stopAll.command = "serverRunner.stopAllServers";
+  stopAll.show();
+  statusBarItems.push(stopAll);
+}
+
+// Save user preferences to workspace state
+function saveUserPreferences() {
+  const servers = configManager.getServers();
+  extensionContext.workspaceState.update("ninja-runner-servers", servers);
+}
+
+// Load user preferences from workspace state
+function loadUserPreferences() {
+  const savedServers = extensionContext.workspaceState.get<ServerConfig[]>(
+    "ninja-runner-servers"
+  );
+  if (savedServers && savedServers.length > 0) {
+    // Clear current servers and load saved ones
+    configManager.clearAllServers();
+    savedServers.forEach((server) => {
+      configManager.addServer(server);
+    });
+    serverProvider.refresh();
+    console.log(`🥷 Loaded ${savedServers.length} saved server configurations`);
+  }
+}
+
 export function deactivate() {
   // Clean up terminals when extension is deactivated
   Object.values(terminals).forEach((terminal) => {
@@ -456,4 +1130,8 @@ export function deactivate() {
     }
   });
   terminals = {};
+
+  // Clean up status bar items
+  statusBarItems.forEach((item) => item.dispose());
+  statusBarItems = [];
 }
