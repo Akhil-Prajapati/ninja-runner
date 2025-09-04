@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.1.1] - 2025-09-04 - Compatibility Update
+
+### 🔧 Improved Compatibility
+- ✅ **Broader VS Code Support** - Now supports VS Code 1.10.0+ (covers 99% of users)
+- ✅ **Legacy Version Support** - Works with older VS Code installations
+- ✅ **Enhanced Accessibility** - More developers can install and use the extension
+
+---
+
 ## [0.1.0] - 2025-09-04 - Major Release
 
 ### 🚀 Universal Server Management

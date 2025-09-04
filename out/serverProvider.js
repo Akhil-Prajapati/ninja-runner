@@ -88,11 +88,11 @@ class ServerItem extends vscode.TreeItem {
         else {
             // Dynamic icon based on server status
             if (isRunning) {
-                this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("charts.green"));
+                this.iconPath = new vscode.ThemeIcon("circle-filled");
                 this.description = "🟢 Running";
             }
             else {
-                this.iconPath = new vscode.ThemeIcon("circle-outline", new vscode.ThemeColor("charts.red"));
+                this.iconPath = new vscode.ThemeIcon("circle-outline");
                 this.description = "🔴 Stopped";
             }
             // Set up single-click command for dynamic servers

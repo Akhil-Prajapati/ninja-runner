@@ -833,10 +833,9 @@ async function showProjectSelectionDialog(
     canPickMany: true,
     placeHolder:
       "Select projects to add as default servers (these will auto-start)",
-    title: "🥷 Ninja Runner - Select Default Projects",
   });
 
-  return selectedItems?.map((item) => item.project);
+  return selectedItems?.map((item: any) => item.project);
 }
 async function scanForProjects(basePath: string) {
   try {

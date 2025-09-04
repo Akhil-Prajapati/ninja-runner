@@ -615,7 +615,6 @@ async function showProjectSelectionDialog(detectedProjects) {
     const selectedItems = await vscode.window.showQuickPick(quickPickItems, {
         canPickMany: true,
         placeHolder: "Select projects to add as default servers (these will auto-start)",
-        title: "🥷 Ninja Runner - Select Default Projects",
     });
     return selectedItems?.map((item) => item.project);
 }
