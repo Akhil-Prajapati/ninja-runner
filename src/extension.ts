@@ -17,6 +17,9 @@ export function activate(context: vscode.ExtensionContext) {
   // Store extension context for persistence
   extensionContext = context;
 
+  // Check for updates and notify user
+  checkForUpdates(context);
+
   // Set context to show the view
   vscode.commands.executeCommand("setContext", "serverRunnerEnabled", true);
 
@@ -230,6 +233,10 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }
     ),
+
+    vscode.commands.registerCommand("serverRunner.checkForUpdates", () => {
+      checkForUpdates(extensionContext);
+    }),
   ];
 
   context.subscriptions.push(...disposables);
@@ -547,7 +554,10 @@ function startServer(name: string, command: string, terminalKey: string) {
 
   terminals[terminalKey] = terminal;
   terminal.show();
-  terminal.sendText(command);
+
+  // Fix any paths in the command for Windows compatibility
+  const fixedCommand = fixPathsInCommand(command);
+  terminal.sendText(fixedCommand);
 
   // Initially set server status to starting, will be updated by monitoring
   serverProvider.updateServerStatus(terminalKey, "starting");
@@ -1243,6 +1253,71 @@ async function isNodeProject(projectPath: string): Promise<boolean> {
   return false;
 }
 
+// Helper function to format path for terminal commands (cross-platform)
+function formatPathForTerminal(relativePath: string): string {
+  // Handle empty or current directory paths
+  if (!relativePath || relativePath === "." || relativePath === "./") {
+    return ".";
+  }
+
+  let formattedPath = relativePath;
+
+  // On Windows, convert backslashes to forward slashes for better terminal compatibility
+  if (process.platform === "win32") {
+    formattedPath = formattedPath.replace(/\\/g, "/");
+  }
+
+  // If path contains spaces or special characters, quote it
+  if (
+    formattedPath.includes(" ") ||
+    formattedPath.includes("&") ||
+    formattedPath.includes("(") ||
+    formattedPath.includes(")") ||
+    formattedPath.includes("'") ||
+    formattedPath.includes('"')
+  ) {
+    // Use double quotes and escape any existing double quotes
+    formattedPath = `"${formattedPath.replace(/"/g, '\\"')}"`;
+  }
+
+  return formattedPath;
+}
+
+// Helper function to fix paths in terminal commands (for custom commands)
+function fixPathsInCommand(command: string): string {
+  if (process.platform !== "win32") {
+    return command; // Only fix on Windows
+  }
+
+  // Look for cd commands and fix paths in them
+  return command.replace(/cd\s+([^\s&|]+)/g, (match, path) => {
+    // Don't modify if path is already quoted or if it's a simple path like "."
+    if (
+      path.startsWith('"') ||
+      path.startsWith("'") ||
+      path === "." ||
+      path === "./"
+    ) {
+      return match;
+    }
+
+    // Convert backslashes to forward slashes
+    const fixedPath = path.replace(/\\/g, "/");
+
+    // Quote if necessary
+    if (
+      fixedPath.includes(" ") ||
+      fixedPath.includes("&") ||
+      fixedPath.includes("(") ||
+      fixedPath.includes(")")
+    ) {
+      return `cd "${fixedPath}"`;
+    }
+
+    return `cd ${fixedPath}`;
+  });
+}
+
 // Add detected project to configuration
 async function addDetectedProject(
   name: string,
@@ -1253,15 +1328,16 @@ async function addDetectedProject(
   const workspaceRoot =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
   const relativePath = path.relative(workspaceRoot, fullPath);
+  const terminalPath = formatPathForTerminal(relativePath);
 
   let command = "";
   let emoji = "";
 
   if (type === "frontend") {
-    command = `cd ${relativePath} && npm run dev`;
+    command = `cd ${terminalPath} && npm run dev`;
     emoji = "🌐";
   } else {
-    command = `cd ${relativePath} && mvn spring-boot:run`;
+    command = `cd ${terminalPath} && mvn spring-boot:run`;
     emoji = "⚙️";
   }
 
@@ -1440,6 +1516,90 @@ function loadUserPreferences() {
     serverProvider.refresh();
     console.log(`🥷 Loaded ${savedServers.length} saved server configurations`);
   }
+}
+
+// Check for extension updates and notify user
+async function checkForUpdates(context: vscode.ExtensionContext) {
+  // Check if we've already notified about this version
+  const lastNotifiedVersion = context.globalState.get(
+    "lastNotifiedVersion",
+    "0.0.0"
+  );
+
+  try {
+    // Read the current version from package.json
+    const packageJsonPath = path.join(context.extensionPath, "package.json");
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+    const installedVersion = packageJson.version;
+    const extensionName = packageJson.displayName || packageJson.name;
+
+    console.log(`🔍 Current version: ${installedVersion}`);
+    console.log(`📦 Extension: ${extensionName}`);
+
+    // Show update notification if this is a first run after update
+    if (
+      installedVersion !== lastNotifiedVersion &&
+      lastNotifiedVersion !== "0.0.0"
+    ) {
+      const action = await vscode.window.showInformationMessage(
+        `🎉 ${extensionName} has been updated to v${installedVersion}! Check out the new features.`,
+        "View Changelog",
+        "What's New",
+        "Dismiss"
+      );
+
+      if (action === "View Changelog") {
+        const changelogPath = path.join(context.extensionPath, "CHANGELOG.md");
+        const changelogUri = vscode.Uri.file(changelogPath);
+        await vscode.commands.executeCommand("vscode.open", changelogUri);
+      } else if (action === "What's New") {
+        vscode.window.showInformationMessage(
+          "Latest improvements: Windows path fix for cd commands, better cross-platform compatibility!"
+        );
+      }
+    }
+
+    // Update the last notified version
+    await context.globalState.update("lastNotifiedVersion", installedVersion);
+
+    // Show welcome message for new users
+    if (lastNotifiedVersion === "0.0.0") {
+      setTimeout(() => {
+        vscode.window
+          .showInformationMessage(
+            "🥷 Welcome to Ninja Runner! Click the Ninja icon in the sidebar to get started.",
+            "Open Ninja Runner",
+            "View Documentation"
+          )
+          .then((selection) => {
+            if (selection === "Open Ninja Runner") {
+              vscode.commands.executeCommand("serverRunner.showView");
+            } else if (selection === "View Documentation") {
+              const readmePath = path.join(context.extensionPath, "README.md");
+              const readmeUri = vscode.Uri.file(readmePath);
+              vscode.commands.executeCommand("vscode.open", readmeUri);
+            }
+          });
+      }, 2000);
+    }
+  } catch (error) {
+    console.error("Error checking for updates:", error);
+  }
+}
+
+// Helper function to prompt users to reload VS Code after marketplace update
+function showReloadPrompt() {
+  vscode.window
+    .showInformationMessage(
+      "🔄 Ninja Runner has been updated! Please reload VS Code to use the latest features.",
+      "Reload Now",
+      "Later"
+    )
+    .then((selection) => {
+      if (selection === "Reload Now") {
+        vscode.commands.executeCommand("workbench.action.reloadWindow");
+      }
+    });
 }
 
 export function deactivate() {

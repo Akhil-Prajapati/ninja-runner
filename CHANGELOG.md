@@ -1,5 +1,22 @@
 # Change Log
 
+## [0.1.3] - 2025-09-08 - Windows Path Fix
+
+### 🔧 Windows Compatibility Fix
+
+- ✅ **Fixed Windows Path Separators** - Resolved issue where `cd FSP/frontend` was using forward slashes instead of backslashes on Windows
+- ✅ **Cross-Platform Path Handling** - Added proper path formatting for terminal commands across different operating systems
+- ✅ **Quoted Path Support** - Paths with spaces or special characters are now properly quoted in terminal commands
+- ✅ **Custom Command Support** - Both auto-generated and user-defined commands now handle Windows paths correctly
+
+### ⚡ Technical Improvements
+
+- ✅ **Smart Path Detection** - Automatically converts backslashes to forward slashes for better terminal compatibility on Windows
+- ✅ **Command Processing** - Enhanced command processing to fix path issues in custom user commands
+- ✅ **Robust Path Quoting** - Intelligent quoting for paths containing spaces, parentheses, or special characters
+
+---
+
 ## [0.1.2] - 2025-01-03 - Status & UX Improvements
 
 ### 🔧 Enhanced Server Status Management

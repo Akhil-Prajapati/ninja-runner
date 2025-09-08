@@ -2,7 +2,7 @@
   "name": "ninja-runner",
   "displayName": "🥷 Ninja Runner",
   "description": "⚡ Universal development server runner - Auto-detect and run any frontend/backend projects",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "akhilninja",
   "icon": "ninja-server-icon.png",
   "engines": {
@@ -139,6 +139,11 @@
         "icon": "$(stop)"
       },
       {
+        "command": "serverRunner.checkForUpdates",
+        "title": "🔄 Check for Updates",
+        "icon": "$(sync)"
+      },
+      {
         "command": "serverRunner.showStatusBar",
         "title": "📊 Show Status Bar",
         "icon": "$(dashboard)"
@@ -190,6 +195,11 @@
           "command": "serverRunner.refresh",
           "when": "view == serverRunnerView",
           "group": "settings@3"
+        },
+        {
+          "command": "serverRunner.checkForUpdates",
+          "when": "view == serverRunnerView",
+          "group": "settings@4"
         }
       ],
       "view/item/context": [
