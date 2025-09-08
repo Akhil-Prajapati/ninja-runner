@@ -30,6 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Auto-detect projects on first activation only if no saved preferences
   if (!isAutoDetectDone && configManager.getServers().length === 0) {
     setTimeout(() => {
+      // On first run, pass empty set so all projects default to selected
       autoDetectProjects();
       isAutoDetectDone = true;
     }, 1000);
@@ -100,13 +101,39 @@ export function activate(context: vscode.ExtensionContext) {
       );
 
       if (confirmation === "Yes, Reset") {
-        // Clear saved preferences
+        // Note: Don't clear saved preferences here, let auto-detect preserve selections
+        // Trigger auto-detection with user selection (which will now preserve previous choices)
+        await autoDetectProjects();
+      }
+    }
+  );
+
+  // Clear all selections command - for when users want to start completely fresh
+  const clearAllSelectionsCommand = vscode.commands.registerCommand(
+    "serverRunner.clearAllSelections",
+    async () => {
+      const confirmation = await vscode.window.showWarningMessage(
+        "🗑️ This will completely clear all server selections and preferences. You'll need to reselect all projects from scratch. Continue?",
+        { modal: true },
+        "Yes, Clear All",
+        "Cancel"
+      );
+
+      if (confirmation === "Yes, Clear All") {
+        // Clear saved preferences completely
         extensionContext.workspaceState.update(
           "ninja-runner-servers",
           undefined
         );
-        // Trigger auto-detection with user selection
+        configManager.clearAllServers();
+        serverProvider.refresh();
+
+        // Trigger auto-detection with fresh selection
         await autoDetectProjects();
+
+        vscode.window.showInformationMessage(
+          "🗑️ All selections cleared! Please reselect your projects."
+        );
       }
     }
   );
@@ -143,6 +170,7 @@ export function activate(context: vscode.ExtensionContext) {
     onActivityBarClick,
     autoDetectCommand,
     resetConfigCommand,
+    clearAllSelectionsCommand,
     installDepsCommand,
     installAllDepsCommand,
     showStatusBarCommand,
@@ -169,6 +197,18 @@ export function activate(context: vscode.ExtensionContext) {
       }
     ),
 
+    vscode.commands.registerCommand(
+      "serverRunner.retryServer",
+      (serverId: string) => {
+        const serverConfig = configManager.getServerById(serverId);
+        if (serverConfig) {
+          // Reset status and try again
+          serverProvider.updateServerStatus(serverId, "stopped");
+          startServer(serverConfig.name, serverConfig.command, serverId);
+        }
+      }
+    ),
+
     vscode.commands.registerCommand("serverRunner.addServer", () => {
       addNewServer();
     }),
@@ -183,10 +223,10 @@ export function activate(context: vscode.ExtensionContext) {
     ),
 
     vscode.commands.registerCommand(
-      "serverRunner.deleteServer",
+      "serverRunner.stopServer",
       (item: ServerItem) => {
         if (item.contextValue) {
-          deleteServer(item.contextValue);
+          stopServer(item.contextValue);
         }
       }
     ),
@@ -256,10 +296,62 @@ function startServerStatusMonitoring() {
 
     servers.forEach((server) => {
       const terminal = terminals[server.id];
-      const isRunning = terminal && terminal.exitStatus === undefined;
-      serverProvider.updateServerStatus(server.id, isRunning || false);
+
+      if (!terminal) {
+        // No terminal exists, server is definitely not running
+        const currentStatus = serverProvider.getServerStatus(server.id);
+        if (currentStatus !== "stopped") {
+          serverProvider.updateServerStatus(server.id, "stopped");
+        }
+        return;
+      }
+
+      // Check if terminal has exited
+      if (terminal.exitStatus !== undefined) {
+        // Terminal has exited, clean up and mark appropriately
+        delete terminals[server.id];
+
+        const currentStatus = serverProvider.getServerStatus(server.id);
+
+        // If it was running and then exited, it might be an error
+        if (currentStatus === "running") {
+          // Check exit code to determine if it was an error or normal termination
+          if (terminal.exitStatus.code !== 0) {
+            serverProvider.updateServerStatus(server.id, "error");
+            vscode.window.showErrorMessage(
+              `🔴 ${server.name} exited with error code ${terminal.exitStatus.code}`
+            );
+          } else {
+            serverProvider.updateServerStatus(server.id, "stopped");
+          }
+        } else {
+          serverProvider.updateServerStatus(server.id, "stopped");
+        }
+
+        console.log(
+          `🔍 Terminal for ${server.name} has exited with status:`,
+          terminal.exitStatus
+        );
+        return;
+      }
+
+      // Terminal exists and hasn't exited
+      const currentStatus = serverProvider.getServerStatus(server.id);
+
+      // Don't automatically reset error status back to running just because terminal exists
+      // Error status should only be reset manually by user action or explicit recovery detection
+      if (currentStatus === "error") {
+        // Keep error status - don't automatically reset to running
+        // User can manually restart the server if they want to try again
+        return;
+      }
+
+      // Only update to running if we're not already tracking it as running/starting/error
+      else if (currentStatus === "stopped") {
+        serverProvider.updateServerStatus(server.id, "running");
+      }
     });
-  }, 3000); // Check every 3 seconds
+  }, 2000); // Check every 2 seconds for more responsive updates
 }
 
 async function addNewServer() {
@@ -396,6 +488,35 @@ async function deleteServer(serverId: string) {
   }
 }
 
+async function stopServer(serverId: string) {
+  const serverConfig = configManager.getServerById(serverId);
+  if (!serverConfig) {
+    vscode.window.showErrorMessage("Server not found!");
+    return;
+  }
+
+  // Check if server is running
+  const terminal = terminals[serverId];
+  if (!terminal || terminal.exitStatus !== undefined) {
+    vscode.window.showInformationMessage(
+      `${serverConfig.name} is not currently running.`
+    );
+    return;
+  }
+
+  // Stop the server
+  terminal.sendText("\u0003"); // Send Ctrl+C
+  terminal.dispose();
+  delete terminals[serverId];
+
+  // Update status
+  serverProvider.updateServerStatus(serverId, "stopped");
+
+  vscode.window.showInformationMessage(
+    `🛑 Stopped ${serverConfig.name} server!`
+  );
+}
+
 function startServer(name: string, command: string, terminalKey: string) {
   // Check if terminal already exists and is running
   if (
@@ -428,17 +549,90 @@ function startServer(name: string, command: string, terminalKey: string) {
   terminal.show();
   terminal.sendText(command);
 
-  // Update server status to running
-  serverProvider.updateServerStatus(terminalKey, true);
+  // Initially set server status to starting, will be updated by monitoring
+  serverProvider.updateServerStatus(terminalKey, "starting");
 
-  // Clean up terminal reference when it exits
-  vscode.window.onDidCloseTerminal((closedTerminal) => {
-    if (closedTerminal === terminal) {
-      delete terminals[terminalKey];
-      // Update server status to stopped
-      serverProvider.updateServerStatus(terminalKey, false);
+  // Set up a more robust server health check with error detection
+  let healthCheckAttempts = 0;
+  const maxHealthCheckAttempts = 6; // Check for 6 times over 12 seconds
+  let hasShownOutput = false;
+
+  const healthCheck = setInterval(() => {
+    healthCheckAttempts++;
+
+    // Check if terminal still exists and hasn't exited
+    if (
+      !terminals[terminalKey] ||
+      terminals[terminalKey].exitStatus !== undefined
+    ) {
+      // Terminal has exited or been removed, server is not running
+      clearInterval(healthCheck);
+
+      const exitStatus = terminals[terminalKey]?.exitStatus;
+
+      // If terminal exited quickly OR with non-zero exit code, it likely failed
+      if (healthCheckAttempts <= 2 || (exitStatus && exitStatus.code !== 0)) {
+        serverProvider.updateServerStatus(terminalKey, "error");
+        vscode.window.showErrorMessage(
+          `🔴 ${name} failed to start - check terminal for errors`
+        );
+      } else {
+        serverProvider.updateServerStatus(terminalKey, "stopped");
+      }
+      return;
     }
-  });
+
+    // After reasonable attempts, if terminal is still alive, consider server running
+    if (healthCheckAttempts >= 3) {
+      // Wait at least 6 seconds before marking as running
+      clearInterval(healthCheck);
+      serverProvider.updateServerStatus(terminalKey, "running");
+
+      // Show success message only once
+      if (!hasShownOutput) {
+        vscode.window.showInformationMessage(
+          `✅ ${name} started successfully!`
+        );
+        hasShownOutput = true;
+      }
+      return;
+    }
+
+    // If we've exceeded max attempts and server isn't clearly running, be more conservative
+    if (healthCheckAttempts >= maxHealthCheckAttempts) {
+      clearInterval(healthCheck);
+
+      // At this point, if terminal exists but we're unsure, mark as running
+      // The monitoring function will catch actual failures
+      if (
+        terminals[terminalKey] &&
+        terminals[terminalKey].exitStatus === undefined
+      ) {
+        serverProvider.updateServerStatus(terminalKey, "running");
+
+        if (!hasShownOutput) {
+          vscode.window.showInformationMessage(
+            `✅ ${name} appears to be running`
+          );
+          hasShownOutput = true;
+        }
+      } else {
+        serverProvider.updateServerStatus(terminalKey, "error");
+      }
+    }
+  }, 2000); // Check every 2 seconds
+
+  // Clean up terminal reference when it exits or closes
+  const onCloseDisposable = vscode.window.onDidCloseTerminal(
+    (closedTerminal) => {
+      if (closedTerminal === terminal) {
+        delete terminals[terminalKey];
+        serverProvider.updateServerStatus(terminalKey, "stopped");
+        console.log(`🛑 Terminal for ${name} was closed`);
+        onCloseDisposable.dispose();
+      }
+    }
+  );
 
   vscode.window.showInformationMessage(`🥷 Ninja launching ${name}...`);
 }
@@ -485,7 +679,7 @@ function stopAllServers() {
 
   // Update all server statuses to stopped
   Object.keys(terminals).forEach((terminalKey) => {
-    serverProvider.updateServerStatus(terminalKey, false);
+    serverProvider.updateServerStatus(terminalKey, "stopped");
   });
 
   terminals = {}; // Clear all terminal references
@@ -502,10 +696,40 @@ async function autoDetectProjects() {
     return;
   }
 
-  // Clear existing servers first
-  configManager.clearAllServers();
-
   vscode.window.showInformationMessage("🔍 Auto-detecting projects...");
+
+  // Get currently saved servers to preserve selection state
+  const currentServers = configManager.getServers();
+  const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+  // Create a simpler mapping using just the working directory path for more reliable matching
+  const currentServerPaths = new Set(
+    currentServers.map((server) => server.workingDirectory)
+  );
+
+  // Also create a name-based mapping for additional matching
+  const currentServerNames = new Set(
+    currentServers.map((server) => {
+      // Extract the base name without framework info - try multiple patterns
+      let baseName = server.name;
+
+      // Remove framework info in parentheses: "FSP Frontend (React/Next.js)" -> "FSP Frontend"
+      if (baseName.includes("(")) {
+        baseName = baseName.split("(")[0].trim();
+      }
+
+      // Also add just the project name part: "FSP Frontend" -> "FSP Frontend"
+      return baseName;
+    })
+  );
+
+  // Add some more variations for better matching
+  const currentServerNamesLowerCase = new Set(
+    Array.from(currentServerNames).map((name) => name.toLowerCase())
+  );
+
+  console.log("Current server paths:", Array.from(currentServerPaths));
+  console.log("Current server names:", Array.from(currentServerNames));
 
   // First, scan and collect all potential projects
   const detectedProjects: Array<{
@@ -538,11 +762,18 @@ async function autoDetectProjects() {
     return;
   }
 
-  // Show user selection dialog
-  const selectedProjects = await showProjectSelectionDialog(detectedProjects);
+  // Show user selection dialog with preserved selections
+  const selectedProjects = await showProjectSelectionDialog(
+    detectedProjects,
+    currentServerPaths,
+    currentServerNames,
+    currentServerNamesLowerCase
+  );
 
   if (selectedProjects && selectedProjects.length > 0) {
-    // Add selected projects to configuration
+    // Clear existing servers and add selected projects to configuration
+    configManager.clearAllServers();
+
     for (const project of selectedProjects) {
       await addDetectedProject(
         project.name,
@@ -556,9 +787,16 @@ async function autoDetectProjects() {
     saveUserPreferences();
 
     serverProvider.refresh();
-    vscode.window.showInformationMessage(
-      `✅ Added ${selectedProjects.length} selected projects as defaults!`
-    );
+
+    if (currentServerPaths && currentServerPaths.size > 0) {
+      vscode.window.showInformationMessage(
+        `✅ Updated server list! ${selectedProjects.length} projects selected (previous selections preserved).`
+      );
+    } else {
+      vscode.window.showInformationMessage(
+        `✅ Added ${selectedProjects.length} selected projects as defaults!`
+      );
+    }
   } else {
     vscode.window.showInformationMessage("No projects selected.");
   }
@@ -796,6 +1034,18 @@ async function scanForProjectsWithCollection(
   }
 }
 
+// Helper function to generate a unique key for a project to better match selections
+function getProjectKey(
+  projectPath: string,
+  projectName: string,
+  framework: string
+): string {
+  const workspaceRoot =
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+  const relativePath = path.relative(workspaceRoot, projectPath);
+  return `${relativePath}||${projectName}||${framework}`;
+}
+
 // Show project selection dialog
 async function showProjectSelectionDialog(
   detectedProjects: Array<{
@@ -803,7 +1053,10 @@ async function showProjectSelectionDialog(
     fullPath: string;
     type: "frontend" | "backend";
     framework: string;
-  }>
+  }>,
+  currentServerPaths?: Set<string>,
+  currentServerNames?: Set<string>,
+  currentServerNamesLowerCase?: Set<string>
 ): Promise<
   | Array<{
       name: string;
@@ -820,11 +1073,54 @@ async function showProjectSelectionDialog(
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
     const relativePath = path.relative(workspaceRoot, project.fullPath);
 
+    // Check if this project was previously selected using multiple matching strategies
+    let wasSelected = true; // Default to true for new detections
+
+    if (currentServerPaths && currentServerPaths.size > 0) {
+      // Try path-based matching first (most reliable)
+      const pathMatch = currentServerPaths.has(relativePath);
+
+      // Try name-based matching as fallback
+      const baseName = project.name.includes("(")
+        ? project.name.split("(")[0].trim()
+        : project.name;
+      const nameMatch = currentServerNames
+        ? currentServerNames.has(baseName)
+        : false;
+      const nameLowerMatch = currentServerNamesLowerCase
+        ? currentServerNamesLowerCase.has(baseName.toLowerCase())
+        : false;
+
+      // Try partial name matching (for cases like "FSP Frontend" matching "FSP")
+      let partialNameMatch = false;
+      if (currentServerNames) {
+        for (const savedName of currentServerNames) {
+          if (baseName.includes(savedName) || savedName.includes(baseName)) {
+            partialNameMatch = true;
+            break;
+          }
+        }
+      }
+
+      // Consider it selected if any matching strategy succeeds
+      wasSelected =
+        pathMatch || nameMatch || nameLowerMatch || partialNameMatch;
+
+      console.log(`Project: ${project.name}`);
+      console.log(`  - Relative path: ${relativePath}`);
+      console.log(`  - Base name: ${baseName}`);
+      console.log(`  - Path match: ${pathMatch}`);
+      console.log(`  - Name match: ${nameMatch}`);
+      console.log(`  - Lower name match: ${nameLowerMatch}`);
+      console.log(`  - Partial name match: ${partialNameMatch}`);
+      console.log(`  - Final selection: ${wasSelected}`);
+    }
+
     return {
       label: `${emoji} ${project.name}`,
       description: `${project.framework} (${project.type})`,
       detail: relativePath,
-      picked: true, // Default to selected
+      picked: wasSelected,
       project: project,
     };
   });
@@ -832,7 +1128,9 @@ async function showProjectSelectionDialog(
   const selectedItems = await vscode.window.showQuickPick(quickPickItems, {
     canPickMany: true,
     placeHolder:
-      "Select projects to add as default servers (these will auto-start)",
+      currentServerPaths && currentServerPaths.size > 0
+        ? "Select projects to keep as default servers (previously selected items are pre-checked)"
+        : "Select projects to add as default servers (these will auto-start)",
   });
 
   return selectedItems?.map((item: any) => item.project);
@@ -1041,18 +1339,41 @@ async function installAllDependencies() {
   }
 
   vscode.window.showInformationMessage(
-    "📦 Installing dependencies for all projects..."
+    "� Downloading dependencies for all projects..."
   );
 
-  // Install dependencies for all servers
-  for (const server of servers) {
-    await installDependencies(server.id);
-    // Wait a bit between installations
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
+  // Install dependencies for all servers with progress
+  vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "📥 Ninja downloading all dependencies...",
+      cancellable: false,
+    },
+    async (progress) => {
+      const totalServers = servers.length;
+
+      for (let i = 0; i < servers.length; i++) {
+        const server = servers[i];
+        const percentage = Math.round(((i + 1) / totalServers) * 100);
+
+        progress.report({
+          increment: percentage / totalServers,
+          message: `Downloading for ${server.name}...`,
+        });
+
+        await installDependencies(server.id);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      progress.report({
+        increment: 100,
+        message: "All downloads complete! 📦",
+      });
+    }
+  );
 
   vscode.window.showInformationMessage(
-    "✅ Dependencies installation started for all projects!"
+    "✅ Dependencies download started for all projects!"
   );
 }
 

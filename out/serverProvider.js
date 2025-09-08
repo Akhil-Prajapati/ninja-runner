@@ -37,18 +37,21 @@ class ServerRunnerProvider {
     initializeServerStatus() {
         const servers = this.configManager.getServers();
         servers.forEach((server) => {
-            this.serverStatus[server.id] = false;
+            this.serverStatus[server.id] = "stopped";
         });
     }
     refresh() {
         this._onDidChangeTreeData.fire();
     }
-    updateServerStatus(serverKey, isRunning) {
-        this.serverStatus[serverKey] = isRunning;
+    updateServerStatus(serverKey, status) {
+        this.serverStatus[serverKey] = status;
         this.refresh();
     }
     getServerStatus(serverKey) {
-        return this.serverStatus[serverKey] || false;
+        return this.serverStatus[serverKey] || "stopped";
+    }
+    isServerRunning(serverKey) {
+        return this.serverStatus[serverKey] === "running";
     }
     getTreeItem(element) {
         return element;
@@ -74,34 +77,54 @@ class ServerRunnerProvider {
 }
 exports.ServerRunnerProvider = ServerRunnerProvider;
 class ServerItem extends vscode.TreeItem {
-    constructor(label, collapsibleState, itemType, contextValue, isRunning) {
+    constructor(label, collapsibleState, itemType, contextValue, status) {
         super(label, collapsibleState);
         this.label = label;
         this.collapsibleState = collapsibleState;
         this.itemType = itemType;
         this.contextValue = contextValue;
-        this.isRunning = isRunning;
+        this.status = status;
         this.tooltip = this.label;
         if (itemType === "folder") {
             this.iconPath = new vscode.ThemeIcon("folder");
         }
         else {
             // Dynamic icon based on server status
-            if (isRunning) {
-                this.iconPath = new vscode.ThemeIcon("circle-filled");
-                this.description = "🟢 Running";
+            switch (status) {
+                case "running":
+                    this.iconPath = new vscode.ThemeIcon("circle-filled");
+                    this.description = "🟢 Running";
+                    break;
+                case "starting":
+                    this.iconPath = new vscode.ThemeIcon("loading~spin");
+                    this.description = "🟡 Starting";
+                    break;
+                case "error":
+                    this.iconPath = new vscode.ThemeIcon("error");
+                    this.description = "🔴 Error";
+                    break;
+                case "stopped":
+                default:
+                    this.iconPath = new vscode.ThemeIcon("circle-outline");
+                    this.description = "🔴 Stopped";
+                    break;
             }
-            else {
-                this.iconPath = new vscode.ThemeIcon("circle-outline");
-                this.description = "🔴 Stopped";
-            }
-            // Set up single-click command for dynamic servers
+            // Set up single-click command for dynamic servers based on status
             if (contextValue) {
-                this.command = {
-                    command: "serverRunner.startDynamicServer",
-                    title: `Start ${label}`,
-                    arguments: [contextValue],
-                };
+                if (status === "error") {
+                    this.command = {
+                        command: "serverRunner.retryServer",
+                        title: `Retry ${label}`,
+                        arguments: [contextValue],
+                    };
+                }
+                else {
+                    this.command = {
+                        command: "serverRunner.startDynamicServer",
+                        title: `Start ${label}`,
+                        arguments: [contextValue],
+                    };
+                }
             }
         }
     }

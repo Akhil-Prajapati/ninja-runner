@@ -2,7 +2,7 @@
   "name": "ninja-runner",
   "displayName": "🥷 Ninja Runner",
   "description": "⚡ Universal development server runner - Auto-detect and run any frontend/backend projects",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "akhilninja",
   "icon": "ninja-server-icon.png",
   "engines": {
@@ -84,14 +84,19 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "serverRunner.clearAllSelections",
+        "title": "🗑️ Clear All Selections",
+        "icon": "$(trash)"
+      },
+      {
         "command": "serverRunner.installDependencies",
         "title": "📦 Install Dependencies",
         "icon": "$(package)"
       },
       {
         "command": "serverRunner.installAllDependencies",
-        "title": "📦 Install All Dependencies",
-        "icon": "$(package)"
+        "title": "📦 Download All Dependencies",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "serverRunner.stopAllServers",
@@ -119,14 +124,19 @@
         "icon": "$(edit)"
       },
       {
-        "command": "serverRunner.deleteServer",
-        "title": "🗑️ Delete Server",
-        "icon": "$(trash)"
-      },
-      {
         "command": "serverRunner.startDynamicServer",
         "title": "▶️ Start Server",
         "icon": "$(play)"
+      },
+      {
+        "command": "serverRunner.retryServer",
+        "title": "🔄 Retry Server",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "serverRunner.stopServer",
+        "title": "🛑 Stop Server",
+        "icon": "$(stop)"
       },
       {
         "command": "serverRunner.showStatusBar",
@@ -152,14 +162,19 @@
           "group": "navigation@1"
         },
         {
-          "command": "serverRunner.startAllServers",
+          "command": "serverRunner.installAllDependencies",
           "when": "view == serverRunnerView",
           "group": "navigation@2"
         },
         {
-          "command": "serverRunner.stopAllServers",
+          "command": "serverRunner.startAllServers",
           "when": "view == serverRunnerView",
           "group": "navigation@3"
+        },
+        {
+          "command": "serverRunner.stopAllServers",
+          "when": "view == serverRunnerView",
+          "group": "navigation@4"
         },
         {
           "command": "serverRunner.resetConfiguration",
@@ -167,9 +182,14 @@
           "group": "settings@1"
         },
         {
-          "command": "serverRunner.refresh",
+          "command": "serverRunner.clearAllSelections",
           "when": "view == serverRunnerView",
           "group": "settings@2"
+        },
+        {
+          "command": "serverRunner.refresh",
+          "when": "view == serverRunnerView",
+          "group": "settings@3"
         }
       ],
       "view/item/context": [
@@ -184,7 +204,7 @@
           "group": "inline@2"
         },
         {
-          "command": "serverRunner.deleteServer",
+          "command": "serverRunner.stopServer",
           "when": "view == serverRunnerView && viewItem",
           "group": "inline@3"
         }

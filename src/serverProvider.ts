@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { ServerConfigManager, ServerConfig } from "./serverConfig";
 
 export interface ServerStatus {
-  [key: string]: boolean;
+  [key: string]: "running" | "stopped" | "starting" | "error";
 }
 
 export class ServerRunnerProvider
@@ -26,7 +26,7 @@ export class ServerRunnerProvider
   private initializeServerStatus(): void {
     const servers = this.configManager.getServers();
     servers.forEach((server) => {
-      this.serverStatus[server.id] = false;
+      this.serverStatus[server.id] = "stopped";
     });
   }
 
@@ -34,13 +34,22 @@ export class ServerRunnerProvider
     this._onDidChangeTreeData.fire();
   }
 
-  updateServerStatus(serverKey: string, isRunning: boolean): void {
-    this.serverStatus[serverKey] = isRunning;
+  updateServerStatus(
+    serverKey: string,
+    status: "running" | "stopped" | "starting" | "error"
+  ): void {
+    this.serverStatus[serverKey] = status;
     this.refresh();
   }
 
-  getServerStatus(serverKey: string): boolean {
-    return this.serverStatus[serverKey] || false;
+  getServerStatus(
+    serverKey: string
+  ): "running" | "stopped" | "starting" | "error" {
+    return this.serverStatus[serverKey] || "stopped";
+  }
+
+  isServerRunning(serverKey: string): boolean {
+    return this.serverStatus[serverKey] === "running";
   }
 
   getTreeItem(element: ServerItem): vscode.TreeItem {
@@ -110,7 +119,7 @@ export class ServerItem extends vscode.TreeItem {
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly itemType: "folder" | "server",
     public readonly contextValue?: string,
-    public readonly isRunning?: boolean
+    public readonly status?: "running" | "stopped" | "starting" | "error"
   ) {
     super(label, collapsibleState);
 
@@ -120,21 +129,41 @@ export class ServerItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon("folder");
     } else {
       // Dynamic icon based on server status
-      if (isRunning) {
-        this.iconPath = new vscode.ThemeIcon("circle-filled");
-        this.description = "🟢 Running";
-      } else {
-        this.iconPath = new vscode.ThemeIcon("circle-outline");
-        this.description = "🔴 Stopped";
+      switch (status) {
+        case "running":
+          this.iconPath = new vscode.ThemeIcon("circle-filled");
+          this.description = "🟢 Running";
+          break;
+        case "starting":
+          this.iconPath = new vscode.ThemeIcon("loading~spin");
+          this.description = "🟡 Starting";
+          break;
+        case "error":
+          this.iconPath = new vscode.ThemeIcon("error");
+          this.description = "🔴 Error";
+          break;
+        case "stopped":
+        default:
+          this.iconPath = new vscode.ThemeIcon("circle-outline");
+          this.description = "🔴 Stopped";
+          break;
       }
 
-      // Set up single-click command for dynamic servers
+      // Set up single-click command for dynamic servers based on status
       if (contextValue) {
-        this.command = {
-          command: "serverRunner.startDynamicServer",
-          title: `Start ${label}`,
-          arguments: [contextValue],
-        };
+        if (status === "error") {
+          this.command = {
+            command: "serverRunner.retryServer",
+            title: `Retry ${label}`,
+            arguments: [contextValue],
+          };
+        } else {
+          this.command = {
+            command: "serverRunner.startDynamicServer",
+            title: `Start ${label}`,
+            arguments: [contextValue],
+          };
+        }
       }
     }
   }
