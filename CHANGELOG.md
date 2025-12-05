@@ -1,5 +1,53 @@
 # Change Log
 
+## [0.1.5] - 2025-12-05 - Build Manager & Automation
+
+### 🏗️ Build Manager
+
+- ✅ **Environment Build Buttons** - Added 4 quick-access build buttons (Dev, Staging, Beta, Prod) in the sidebar
+- ✅ **Automatic Profile Update** - Automatically updates `spring.profiles.active` in `application.properties` before building
+- ✅ **One-Click Builds** - Execute `./build.sh zip war [environment]` with a single click
+- ✅ **Auto Restart Frontend** - Automatically restarts all frontend servers after successful builds
+- ✅ **Smart Properties Detection** - Automatically finds `application.properties` in common locations
+- ✅ **Build Progress Tracking** - Visual progress notifications during build process
+- ✅ **Dedicated Build Terminal** - Creates a dedicated terminal for each build with clear environment labeling
+
+### 🎯 Developer Experience
+
+- ✅ **No Manual Edits Needed** - Eliminates manual profile switching in configuration files
+- ✅ **Time Saver** - Reduces build time from multiple manual steps to one click
+- ✅ **Color-Coded Buttons** - Each environment has distinct color coding (🟢 Dev, 🟡 Staging, 🟠 Beta, 🔴 Prod)
+- ✅ **Team Collaboration** - Makes it easier for teams to build for different environments consistently
+
+---
+
+## [0.1.4] - 2025-09-08 - Enhanced Server Monitoring & Fixes
+
+### 🚀 Enhanced Project Detection
+
+- ✅ **Universal Node.js Detection** - Now detects Node.js projects regardless of folder structure
+- ✅ **Smart Framework Recognition** - Automatically identifies React, Next.js, Vue.js, Angular, Express.js, Fastify, NestJS, and more
+- ✅ **Intelligent Type Detection** - Determines if Node.js projects are frontend or backend based on dependencies and scripts
+- ✅ **Improved Command Generation** - Uses appropriate start commands (npm run dev, npm start, ng serve, etc.) based on framework
+- ✅ **Deeper Project Scanning** - Scans more thoroughly to find standalone projects not in "frontend/backend" folders
+
+### 🎯 Better User Experience
+
+- ✅ **Reduced Popup Spam** - Significantly reduced excessive notification popups during startup and operation
+- ✅ **Console Logging** - Non-critical messages now go to console instead of popup notifications
+- ✅ **Smarter Notifications** - Only shows essential popups, like errors and first-time welcome
+- ✅ **Quieter Auto-Start** - Server startup messages are less intrusive
+- ✅ **Enhanced Health Checks** - Added manual health check command for servers
+
+### 🔧 Technical Improvements
+
+- ✅ **Advanced Package.json Analysis** - Reads dependencies, scripts, and metadata to determine project type
+- ✅ **Framework-Specific Commands** - Different start commands for different Node.js frameworks
+- ✅ **Better Spring Boot Support** - Enhanced Maven commands with better error handling
+- ✅ **Improved Error Detection** - Better monitoring for backend server crashes and runtime errors
+
+---
+
 ## [0.1.3] - 2025-09-08 - Windows Path Fix
 
 ### 🔧 Windows Compatibility Fix

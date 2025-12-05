@@ -53,6 +53,39 @@ class ServerRunnerProvider {
     isServerRunning(serverKey) {
         return this.serverStatus[serverKey] === "running";
     }
+    getProjectsWithBuildScript() {
+        const servers = this.configManager.getServers();
+        const projects = new Map();
+        // Group servers by their parent project directory
+        servers.forEach((server) => {
+            const workingDir = server.workingDirectory;
+            // Try to find the project root (parent of backend/frontend)
+            const parts = workingDir.split(/[\/\\]/);
+            // Look for common project patterns
+            let projectRoot = "";
+            let projectName = "";
+            // Check if path contains backend or frontend
+            const backendIndex = parts.findIndex((p) => p === "backend");
+            const frontendIndex = parts.findIndex((p) => p === "frontend");
+            if (backendIndex > 0) {
+                // Project root is parent of backend folder
+                projectRoot = parts.slice(0, backendIndex).join("/");
+                projectName = parts[backendIndex - 1];
+            }
+            else if (frontendIndex > 0) {
+                // Project root is parent of frontend folder
+                projectRoot = parts.slice(0, frontendIndex).join("/");
+                projectName = parts[frontendIndex - 1];
+            }
+            if (projectRoot && projectName && !projects.has(projectName)) {
+                projects.set(projectName, projectRoot);
+            }
+        });
+        return Array.from(projects.entries()).map(([name, path]) => ({
+            name,
+            path,
+        }));
+    }
     getTreeItem(element) {
         return element;
     }
@@ -62,31 +95,87 @@ class ServerRunnerProvider {
             return Promise.resolve([
                 new ServerItem("⚡ Frontend Servers", vscode.TreeItemCollapsibleState.Expanded, "folder", undefined),
                 new ServerItem("🥷 Backend Servers", vscode.TreeItemCollapsibleState.Expanded, "folder", undefined),
+                new ServerItem("🏗️ Build Manager", vscode.TreeItemCollapsibleState.Expanded, "buildManager", undefined),
             ]);
         }
         if (element.label === "⚡ Frontend Servers") {
             const frontendServers = this.configManager.getServersByCategory("Frontend Servers");
-            return Promise.resolve(frontendServers.map((server) => new ServerItem(`🅵 ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", server.id, this.getServerStatus(server.id))));
+            return Promise.resolve(frontendServers.map((server) => new ServerItem(`🅵 ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", `${server.id}:frontend`, this.getServerStatus(server.id))));
         }
         if (element.label === "🥷 Backend Servers") {
             const backendServers = this.configManager.getServersByCategory("Backend Servers");
-            return Promise.resolve(backendServers.map((server) => new ServerItem(`🅱️ ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", server.id, this.getServerStatus(server.id))));
+            return Promise.resolve(backendServers.map((server) => new ServerItem(`🅱️ ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", `${server.id}:backend`, this.getServerStatus(server.id))));
+        }
+        if (element.label === "🏗️ Build Manager") {
+            // Get all unique projects that have build.sh
+            const buildProjects = this.getProjectsWithBuildScript();
+            const projectFolders = [];
+            buildProjects.forEach((project) => {
+                projectFolders.push(new ServerItem(`🏗️ ${project.name}`, vscode.TreeItemCollapsibleState.Collapsed, "buildFolder", `buildFolder:${project.path}`, undefined, project.path));
+            });
+            return Promise.resolve(projectFolders);
+        }
+        // Check if this is a build folder being expanded
+        if (element.itemType === "buildFolder" && element.projectPath) {
+            const projectName = element.label?.replace("🏗️ ", "") || "Project";
+            return Promise.resolve([
+                new ServerItem(`🟡 Staging Build`, vscode.TreeItemCollapsibleState.None, "build", `build:staging:${element.projectPath}`, undefined, undefined, projectName),
+                new ServerItem(`🟠 Beta Build`, vscode.TreeItemCollapsibleState.None, "build", `build:beta:${element.projectPath}`, undefined, undefined, projectName),
+                new ServerItem(`🔴 Production Build`, vscode.TreeItemCollapsibleState.None, "build", `build:prod:${element.projectPath}`, undefined, undefined, projectName),
+            ]);
         }
         return Promise.resolve([]);
     }
 }
 exports.ServerRunnerProvider = ServerRunnerProvider;
 class ServerItem extends vscode.TreeItem {
-    constructor(label, collapsibleState, itemType, contextValue, status) {
+    constructor(label, collapsibleState, itemType, contextValue, status, projectPath, projectName) {
         super(label, collapsibleState);
         this.label = label;
         this.collapsibleState = collapsibleState;
         this.itemType = itemType;
         this.contextValue = contextValue;
         this.status = status;
+        this.projectPath = projectPath;
+        this.projectName = projectName;
         this.tooltip = this.label;
         if (itemType === "folder") {
             this.iconPath = new vscode.ThemeIcon("folder");
+        }
+        else if (itemType === "buildManager") {
+            // Build Manager root with distinct icon
+            this.iconPath = new vscode.ThemeIcon("tools");
+        }
+        else if (itemType === "buildFolder") {
+            // Project folders in Build Manager - use package icon to differentiate from regular folders
+            this.iconPath = new vscode.ThemeIcon("briefcase");
+            this.description = "Build Environments";
+        }
+        else if (itemType === "build") {
+            // Build buttons with distinct colored icons
+            const envMatch = label.match(/(Staging|Beta|Production)/);
+            const environment = envMatch ? envMatch[1] : "";
+            // Different icons with descriptions for each environment
+            if (environment === "Staging") {
+                this.iconPath = new vscode.ThemeIcon("beaker");
+                this.description = `🟡 Test Environment`;
+            }
+            else if (environment === "Beta") {
+                this.iconPath = new vscode.ThemeIcon("package");
+                this.description = `🟠 Pre-Release`;
+            }
+            else if (environment === "Production") {
+                this.iconPath = new vscode.ThemeIcon("rocket");
+                this.description = `🔴 Live Deploy`;
+            }
+            // Set up single-click command for build buttons
+            if (contextValue) {
+                this.command = {
+                    command: "serverRunner.triggerBuild",
+                    title: `Trigger ${label}`,
+                    arguments: [contextValue],
+                };
+            }
         }
         else {
             // Dynamic icon based on server status

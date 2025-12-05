@@ -6,11 +6,11 @@ echo "🥷 Installing Ninja Runner Extension by akhilninja..."
 
 # Get the current directory
 EXTENSION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VSIX_FILE="$EXTENSION_DIR/ninja-runner-0.1.1.vsix"
+VSIX_FILE="$EXTENSION_DIR/ninja-runner-0.1.4.vsix"
 
 # Check if the VSIX file exists
 if [ ! -f "$VSIX_FILE" ]; then
-    echo "Error: ninja-runner-0.1.1.vsix not found in $EXTENSION_DIR"
+    echo "Error: ninja-runner-0.1.4.vsix not found in $EXTENSION_DIR"
     echo "Please make sure you've run 'vsce package' first."
     exit 1
 fi
