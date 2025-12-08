@@ -1836,6 +1836,12 @@ async function triggerBuild(environment, projectPath) {
         cancellable: false,
     }, async (progress) => {
         progress.report({ increment: 0, message: "Starting build process..." });
+        // Mark ALL frontend servers as "restarting" since build.sh will kill/restart them
+        const allServers = configManager.getServers();
+        const frontendServers = allServers.filter((s) => s.type === "frontend");
+        frontendServers.forEach((server) => {
+            serverProvider.updateServerStatus(server.id, "restarting");
+        });
         // Create a dedicated terminal for the build
         const buildTerminal = vscode.window.createTerminal({
             name: `🏗️ ${projectName} Build (${environment})`,
@@ -1909,7 +1915,77 @@ async function triggerBuild(environment, projectPath) {
             }
         }
         progress.report({ increment: 100, message: "Done!" });
-        vscode.window.showInformationMessage(`🎉 ${projectName} ${environment.toUpperCase()} build completed! Profile reset to dev, frontend auto-restarted by build.sh`);
+        // Kill old frontend terminals (Auth and current project)
+        const parentDir = path.dirname(projectPath);
+        const authTerminalKey = `${path.join(parentDir, "Auth")}-frontend`;
+        const projectTerminalKey = `${projectPath}-frontend`;
+        // Close ALL existing frontend terminals
+        vscode.window.terminals.forEach((terminal) => {
+            if (terminal.name.includes("Auth Frontend") ||
+                terminal.name.includes(`${projectName} Frontend`) ||
+                terminal.name.includes("Port 3000") ||
+                terminal.name.includes("Port 3001")) {
+                console.log(`🛑 Closing old terminal: ${terminal.name}`);
+                terminal.dispose();
+            }
+        });
+        if (terminals[authTerminalKey]) {
+            delete terminals[authTerminalKey];
+        }
+        if (terminals[projectTerminalKey]) {
+            delete terminals[projectTerminalKey];
+        }
+        // Wait for build.sh to restart frontends
+        await new Promise((resolve) => setTimeout(resolve, 12000));
+        // Open new terminals showing the log files
+        const authFrontendPath = path.join(parentDir, "Auth", "frontend");
+        const projectFrontendPath = path.join(projectPath, "frontend");
+        // Log files are in project root, not frontend folder
+        const authLogPath = path.join(parentDir, "Auth", "auth-frontend.log");
+        const projectLogPath = path.join(projectPath, "frontend.log");
+        // Create Auth terminal
+        if (fs.existsSync(authFrontendPath)) {
+            const authTerminal = vscode.window.createTerminal({
+                name: `🔐 Auth Frontend (Port 3000)`,
+                cwd: authFrontendPath,
+            });
+            terminals[authTerminalKey] = authTerminal;
+            authTerminal.show(false);
+            // Show log output after a small delay
+            setTimeout(() => {
+                if (fs.existsSync(authLogPath)) {
+                    authTerminal.sendText(`clear && echo "📋 Auth Frontend Log (Port 3000)" && tail -f "${authLogPath}"`);
+                }
+                else {
+                    authTerminal.sendText(`echo "🔐 Auth Frontend running on port 3000" && echo "Log file: ${authLogPath}"`);
+                }
+            }, 500);
+        }
+        // Create Project terminal
+        if (fs.existsSync(projectFrontendPath)) {
+            const projectTerminal = vscode.window.createTerminal({
+                name: `📦 ${projectName} Frontend (Port 3001)`,
+                cwd: projectFrontendPath,
+            });
+            terminals[projectTerminalKey] = projectTerminal;
+            projectTerminal.show(true);
+            // Show log output after a small delay
+            setTimeout(() => {
+                if (fs.existsSync(projectLogPath)) {
+                    projectTerminal.sendText(`clear && echo "📋 ${projectName} Frontend Log (Port 3001)" && tail -f "${projectLogPath}"`);
+                }
+                else {
+                    projectTerminal.sendText(`echo "📦 ${projectName} Frontend running on port 3001" && echo "Log file: ${projectLogPath}"`);
+                }
+            }, 500);
+        }
+        // Mark ALL frontend servers as "running" since build.sh has restarted them
+        const allServersAfter = configManager.getServers();
+        const frontendServersAfter = allServersAfter.filter((s) => s.type === "frontend");
+        frontendServersAfter.forEach((server) => {
+            serverProvider.updateServerStatus(server.id, "running");
+        });
+        vscode.window.showInformationMessage(`✅ ${projectName} ${environment.toUpperCase()} build completed! Frontends restarted on ports 3000 & 3001`);
     });
 }
 // Find build.sh in specific project path
@@ -2010,124 +2086,28 @@ async function restartMatchingFrontendServer(buildDir) {
 // Automatically patch build.sh with completion marker
 async function patchBuildScript(buildScriptPath) {
     try {
+        // Read user's current build.sh
         let content = fs.readFileSync(buildScriptPath, "utf8");
-        // 1. Add dev mode after the dir variable declaration
-        const dirPattern = /dir="\$\(cd -P -- "\$\(dirname -- "\$0"\)" && pwd -P\)"/;
-        const devModeCode = `
-
-# Handle dev mode - kill existing and start fresh frontend
-if [[ $@ == *"dev"* ]]; then
-  cd "$dir/frontend"
-  
-  echo "🛑 Killing frontend process for $(basename "$dir")..."
-  
-  # Find node processes running from THIS specific frontend directory
-  pids=$(lsof -ti -sTCP:LISTEN -a -c node 2>/dev/null | while read pid; do
-    cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo "")
-    # Check if this process is running from our frontend directory
-    if [[ "$cwd" == "$dir/frontend"* ]]; then
-      echo "$pid"
-    fi
-  done)
-  
-  if [ -n "$pids" ]; then
-    echo "Found frontend process(es): $pids"
-    echo "$pids" | xargs kill -9 2>/dev/null || true
-    echo "✅ Killed frontend for $(basename "$dir")"
-  else
-    echo "ℹ️  No running frontend found for $(basename "$dir")"
-  fi
-  
-  # Wait for cleanup
-  sleep 2
-  
-  echo "🚀 Starting fresh frontend server for $(basename "$dir")..."
-  npm start
-  exit 0
-fi`;
-        if (dirPattern.test(content) &&
-            !content.includes('if [[ $@ == *"dev"* ]]; then')) {
-            content = content.replace(dirPattern, `dir="$(cd -P -- "$(dirname -- "$0")" && pwd -P)"${devModeCode}`);
-            console.log(`✅ Added dev mode to build.sh`);
+        // Check if already patched
+        if (content.includes("IS_WINDOWS=false") &&
+            content.includes("NINJA_BUILD_COMPLETE")) {
+            vscode.window.showInformationMessage("✅ build.sh is already patched!");
+            console.log("build.sh already has all patches");
+            return;
         }
-        // 2. Find the location after "✔ built: ZIP" line and add completion marker + auto-restart
-        const zipBuiltPattern = /echo "✔ built: ZIP \$env_label"/;
-        const markerCode = `
-  
-  # Signal completion for automation tools
-  echo ""
-  echo "🎉 NINJA_BUILD_COMPLETE 🎉"
-  echo ""
-  touch "$dir/.ninja_build_complete"
-  
-  # Auto-restart frontend after build completion
-  echo ""
-  echo "🔄 Killing all frontend servers on ports 3000-3030..."
-  
-  # Kill all processes on ports 3000-3030
-  killed_ports=""
-  for port in {3000..3030}; do
-    pids=$(lsof -ti:$port 2>/dev/null || echo "")
-    if [ -n "$pids" ]; then
-      echo "🛑 Killing processes on port $port: $pids"
-      echo "$pids" | xargs kill -9 2>/dev/null || true
-      killed_ports="$killed_ports $port"
-    fi
-  done
-  
-  if [ -n "$killed_ports" ]; then
-    echo "✅ Killed processes on ports:$killed_ports"
-  else
-    echo "ℹ️  No processes found on ports 3000-3030"
-  fi
-  
-  # Wait for ports to be freed
-  sleep 3
-  
-  echo ""
-  echo "🚀 Starting frontends..."
-  
-  # Get parent directory (NEXTGEN-OCBIS)
-  parent_dir=$(dirname "$dir")
-  
-  # Start Auth project frontend
-  auth_frontend="$parent_dir/Auth/frontend"
-  if [ -d "$auth_frontend" ]; then
-    cd "$auth_frontend"
-    echo "🔐 Starting Auth frontend from: $(pwd)"
-    nohup npm start > "$parent_dir/Auth/auth-frontend.log" 2>&1 &
-    auth_pid=$!
-    echo "✅ Auth frontend started (PID: $auth_pid)"
-    sleep 2
-  else
-    echo "ℹ️  Auth frontend not found at: $auth_frontend"
-  fi
-  
-  # Start current project frontend
-  current_frontend="$dir/frontend"
-  if [ -d "$current_frontend" ]; then
-    cd "$current_frontend"
-    echo "📦 Starting $(basename "$dir") frontend from: $(pwd)"
-    nohup npm start > "$dir/frontend.log" 2>&1 &
-    current_pid=$!
-    echo "✅ $(basename "$dir") frontend started (PID: $current_pid)"
-  else
-    echo "⚠️  Frontend directory not found: $current_frontend"
-  fi
-  
-  cd "$dir"
-  echo ""
-  echo "🎉 Frontend restart complete!"
-  echo "📝 Logs:"
-  echo "   - Auth: $parent_dir/Auth/auth-frontend.log"
-  echo "   - $(basename "$dir"): $dir/frontend.log"`;
-        if (zipBuiltPattern.test(content) &&
-            !content.includes("NINJA_BUILD_COMPLETE")) {
-            content = content.replace(zipBuiltPattern, `echo "✔ built: ZIP $env_label"${markerCode}`);
-            console.log(`✅ Added completion marker and auto-restart to build.sh`);
+        // Copy the template file directly from extension
+        const templatePath = path.join(extensionContext.extensionPath, "build.sh");
+        if (fs.existsSync(templatePath)) {
+            const templateContent = fs.readFileSync(templatePath, "utf8");
+            fs.writeFileSync(buildScriptPath, templateContent, "utf8");
+            // Make executable
+            fs.chmodSync(buildScriptPath, "755");
+            vscode.window.showInformationMessage("✅ build.sh patched successfully! All automation features added.");
+            console.log(`✅ Copied template build.sh to: ${buildScriptPath}`);
         }
-        fs.writeFileSync(buildScriptPath, content, "utf8");
-        console.log(`✅ Patched build.sh at: ${buildScriptPath}`);
+        else {
+            vscode.window.showErrorMessage("❌ Template build.sh not found in extension");
+        }
     }
     catch (error) {
         console.error("Error patching build.sh:", error);

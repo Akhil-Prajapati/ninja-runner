@@ -1,23 +1,33 @@
 # Change Log
 
-## [0.1.5] - 2025-12-05 - Build Manager & Automation
+## [0.1.5] - 2025-12-08 - Build Manager & Smart Automation
 
 ### 🏗️ Build Manager
 
-- ✅ **Environment Build Buttons** - Added 4 quick-access build buttons (Dev, Staging, Beta, Prod) in the sidebar
+- ✅ **Environment Build Buttons** - Quick-access build buttons (Staging, Beta, Production) in the sidebar
 - ✅ **Automatic Profile Update** - Automatically updates `spring.profiles.active` in `application.properties` before building
 - ✅ **One-Click Builds** - Execute `./build.sh zip war [environment]` with a single click
-- ✅ **Auto Restart Frontend** - Automatically restarts all frontend servers after successful builds
-- ✅ **Smart Properties Detection** - Automatically finds `application.properties` in common locations
-- ✅ **Build Progress Tracking** - Visual progress notifications during build process
+- ✅ **Auto Restart Frontend** - Automatically kills and restarts all frontend servers after successful builds
+- ✅ **Smart Port Management** - Auth runs on port 3000, current project on port 3001
+- ✅ **Build Completion Detection** - Uses marker file to detect when build.sh completes
 - ✅ **Dedicated Build Terminal** - Creates a dedicated terminal for each build with clear environment labeling
+
+### 🔄 Frontend Server Status
+
+- ✅ **Restarting Status** - New "🔄 Restarting" status indicator when frontends are being restarted
+- ✅ **Accurate Status Updates** - Frontend status correctly shows Running/Stopped/Restarting states
+- ✅ **Auto Terminal Management** - Old frontend terminals are closed, new ones opened with log tailing
 
 ### 🎯 Developer Experience
 
-- ✅ **No Manual Edits Needed** - Eliminates manual profile switching in configuration files
-- ✅ **Time Saver** - Reduces build time from multiple manual steps to one click
-- ✅ **Color-Coded Buttons** - Each environment has distinct color coding (🟢 Dev, 🟡 Staging, 🟠 Beta, 🔴 Prod)
-- ✅ **Team Collaboration** - Makes it easier for teams to build for different environments consistently
+- ✅ **Clean Build Output** - User-friendly, production-ready terminal output
+- ✅ **Patch Build Script** - One-click patching of build.sh with all automation features
+- ✅ **Cross-Platform Support** - Works on Windows and Linux/Mac
+- ✅ **Smart Path Resolution** - Correctly resolves relative paths from workspace root
+
+### 🥷 Branding
+
+- ✅ **Thank You Message** - "Thank you for using Ninja Runner by @AkhilNinja" after builds
 
 ---
 

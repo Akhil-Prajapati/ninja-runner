@@ -23,11 +23,54 @@
 #       ./build.sh zip war staging
 #   - Pass `keep` to keep existing build folder as it is
 #       ./build.sh zip war keep
-#   - To start frontend dev server only:
-#       ./build.sh dev
 
 set -Eeuo pipefail
 dir="$(cd -P -- "$(dirname -- "$0")" && pwd -P)"
+
+# Detect OS
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
+    IS_WINDOWS=true
+    echo "🪟 Detected Windows environment"
+else
+    echo "🐧 Detected Linux/Unix environment"
+fi
+
+# Function to kill process on port - cross-platform
+kill_port() {
+    local port=$1
+    local pids=""
+    
+    if [ "$IS_WINDOWS" = true ]; then
+        # Windows
+        pids=$(netstat -ano | grep ":$port " | grep "LISTENING" | awk '{print $5}' | sort -u 2>/dev/null || echo "")
+        if [ -n "$pids" ]; then
+            for pid in $pids; do
+                taskkill //PID "$pid" //F 2>/dev/null || true
+            done
+            return 0
+        fi
+    else
+        # Linux/Unix
+        pids=$(fuser "$port/tcp" 2>/dev/null || echo "")
+        if [ -n "$pids" ]; then
+            fuser -k "$port/tcp" 2>/dev/null || true
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Function to check if port is free
+is_port_free() {
+    local port=$1
+    
+    if [ "$IS_WINDOWS" = true ]; then
+        ! netstat -ano | grep ":$port " | grep -q "LISTENING"
+    else
+        ! lsof -i:$port -sTCP:LISTEN >/dev/null 2>&1
+    fi
+}
 
 # Handle dev mode - kill existing and start fresh frontend
 if [[ $@ == *"dev"* ]]; then
@@ -35,28 +78,37 @@ if [[ $@ == *"dev"* ]]; then
   
   echo "🛑 Killing frontend process for $(basename "$dir")..."
   
-  # Find node processes running from THIS specific frontend directory
-  pids=$(lsof -ti -sTCP:LISTEN -a -c node 2>/dev/null | while read pid; do
-    cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo "")
-    # Check if this process is running from our frontend directory
-    if [[ "$cwd" == "$dir/frontend"* ]]; then
-      echo "$pid"
-    fi
-  done)
+  if [ "$IS_WINDOWS" = true ]; then
+    # Windows: Find node processes
+    pids=$(wmic process where "name='node.exe'" get ProcessId,CommandLine /format:csv 2>/dev/null | grep -i "$(echo "$dir/frontend" | sed 's/\\/\\\\/g')" | awk -F',' '{print $3}' | grep -v '^$' || echo "")
+  else
+    # Linux: Find node processes running from THIS specific frontend directory
+    pids=$(lsof -ti -sTCP:LISTEN -a -c node 2>/dev/null | while read pid; do
+      cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo "")
+      if [[ "$cwd" == "$dir/frontend"* ]]; then
+        echo "$pid"
+      fi
+    done)
+  fi
   
   if [ -n "$pids" ]; then
     echo "Found frontend process(es): $pids"
-    echo "$pids" | xargs kill -9 2>/dev/null || true
+    if [ "$IS_WINDOWS" = true ]; then
+      for pid in $pids; do
+        taskkill //PID "$pid" //F 2>/dev/null || true
+      done
+    else
+      echo "$pids" | xargs kill -9 2>/dev/null || true
+    fi
     echo "✅ Killed frontend for $(basename "$dir")"
   else
     echo "ℹ️  No running frontend found for $(basename "$dir")"
   fi
   
-  # Wait for cleanup
   sleep 2
   
   echo "🚀 Starting fresh frontend server for $(basename "$dir")..."
-  npm start
+  npm run dev
   exit 0
 fi
 
@@ -135,73 +187,98 @@ if [[ $@ == *"zip"* ]]; then
   
   echo "✔ built: ZIP $env_label"
   
-  # Signal completion immediately after ZIP build (last step)
+  # Signal completion for automation tools
   echo ""
   echo "🎉 NINJA_BUILD_COMPLETE 🎉"
   echo ""
   touch "$dir/.ninja_build_complete"
   
   # Auto-restart frontend after build completion
-  echo ""
-  echo "🔄 Killing all frontend servers on ports 3000-3030..."
+  echo "🔄 Restarting frontend servers..."
   
-  # Kill all processes on ports 3000-3030
+  # Kill all processes on ports 3000-3030 (cross-platform)
   killed_ports=""
   for port in {3000..3030}; do
-    pids=$(lsof -ti:$port 2>/dev/null || echo "")
-    if [ -n "$pids" ]; then
-      echo "🛑 Killing processes on port $port: $pids"
-      echo "$pids" | xargs kill -9 2>/dev/null || true
+    if kill_port "$port"; then
       killed_ports="$killed_ports $port"
     fi
   done
   
   if [ -n "$killed_ports" ]; then
-    echo "✅ Killed processes on ports:$killed_ports"
-  else
-    echo "ℹ️  No processes found on ports 3000-3030"
+    echo "   Stopped services on ports:$killed_ports"
   fi
   
-  # Wait for ports to be freed
+  # Initial wait for cleanup
+  sleep 5
+  
+  # Verify ports are actually free before starting
+  max_retries=15
+  
+  # Check port 3000
+  retry_count=0
+  while ! is_port_free 3000 && [ $retry_count -lt $max_retries ]; do
+    kill_port 3000
+    sleep 3
+    retry_count=$((retry_count + 1))
+  done
+  
+  # Check port 3001
+  retry_count=0
+  while ! is_port_free 3001 && [ $retry_count -lt $max_retries ]; do
+    kill_port 3001
+    sleep 3
+    retry_count=$((retry_count + 1))
+  done
+  
+  # Final wait before starting
   sleep 3
   
   echo ""
-  echo "🚀 Starting frontends..."
+  echo "🚀 Starting frontend servers..."
   
   # Get parent directory (NEXTGEN-OCBIS)
   parent_dir=$(dirname "$dir")
   
-  # Start Auth project frontend
+  # Start Auth project frontend (port 3000)
   auth_frontend="$parent_dir/Auth/frontend"
   if [ -d "$auth_frontend" ]; then
     cd "$auth_frontend"
-    echo "🔐 Starting Auth frontend from: $(pwd)"
-    nohup npm start > "$parent_dir/Auth/auth-frontend.log" 2>&1 &
-    auth_pid=$!
-    echo "✅ Auth frontend started (PID: $auth_pid)"
-    sleep 2
-  else
-    echo "ℹ️  Auth frontend not found at: $auth_frontend"
+    
+    if [ "$IS_WINDOWS" = true ]; then
+      cmd //c "set PORT=3000 && set NODE_ENV=development && start /B npm run dev > $parent_dir/Auth/auth-frontend.log 2>&1"
+      sleep 2
+    else
+      PORT=3000 NODE_ENV=development nohup npm run dev > "$parent_dir/Auth/auth-frontend.log" 2>&1 &
+    fi
+    echo "   ✅ Auth → http://localhost:3000"
+    
+    sleep 5
   fi
   
-  # Start current project frontend
+  # Start current project frontend (port 3001)
   current_frontend="$dir/frontend"
   if [ -d "$current_frontend" ]; then
     cd "$current_frontend"
-    echo "📦 Starting $(basename "$dir") frontend from: $(pwd)"
-    nohup npm start > "$dir/frontend.log" 2>&1 &
-    current_pid=$!
-    echo "✅ $(basename "$dir") frontend started (PID: $current_pid)"
-  else
-    echo "⚠️  Frontend directory not found: $current_frontend"
+    
+    if [ "$IS_WINDOWS" = true ]; then
+      cmd //c "set PORT=3001 && set NODE_ENV=development && start /B npm run dev > $dir/frontend.log 2>&1"
+      sleep 2
+    else
+      PORT=3001 NODE_ENV=development nohup npm run dev > "$dir/frontend.log" 2>&1 &
+    fi
+    echo "   ✅ $(basename "$dir") → http://localhost:3001"
+    
+    sleep 3
   fi
   
   cd "$dir"
   echo ""
-  echo "🎉 Frontend restart complete!"
-  echo "📝 Logs:"
-  echo "   - Auth: $parent_dir/Auth/auth-frontend.log"
-  echo "   - $(basename "$dir"): $dir/frontend.log"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "✅ Build & Restart Complete!"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "🥷 Thank you for using Ninja Runner by @AkhilNinja"
+  echo ""
 fi
 
 if [[ ($@ == *"war"* || $@ == *"zip"*) && (-x "$(command -v nautilus)") ]]; then

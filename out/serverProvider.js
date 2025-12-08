@@ -25,6 +25,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ServerItem = exports.ServerRunnerProvider = void 0;
 const vscode = __importStar(require("vscode"));
+const path = __importStar(require("path"));
 const serverConfig_1 = require("./serverConfig");
 class ServerRunnerProvider {
     constructor() {
@@ -56,9 +57,20 @@ class ServerRunnerProvider {
     getProjectsWithBuildScript() {
         const servers = this.configManager.getServers();
         const projects = new Map();
+        // Get workspace folder for resolving relative paths
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        const workspaceRoot = workspaceFolders && workspaceFolders.length > 0
+            ? workspaceFolders[0].uri.fsPath
+            : "";
         // Group servers by their parent project directory
         servers.forEach((server) => {
-            const workingDir = server.workingDirectory;
+            let workingDir = server.workingDirectory;
+            // If path is relative, resolve it from workspace root
+            if (!path.isAbsolute(workingDir) && workspaceRoot) {
+                workingDir = path.join(workspaceRoot, workingDir);
+            }
+            // Ensure we have an absolute path
+            workingDir = path.resolve(workingDir);
             // Try to find the project root (parent of backend/frontend)
             const parts = workingDir.split(/[\/\\]/);
             // Look for common project patterns
@@ -77,14 +89,19 @@ class ServerRunnerProvider {
                 projectRoot = parts.slice(0, frontendIndex).join("/");
                 projectName = parts[frontendIndex - 1];
             }
+            // Ensure projectRoot is absolute
+            if (projectRoot && !projectRoot.startsWith("/")) {
+                projectRoot = "/" + projectRoot;
+            }
             if (projectRoot && projectName && !projects.has(projectName)) {
                 projects.set(projectName, projectRoot);
             }
         });
-        return Array.from(projects.entries()).map(([name, path]) => ({
+        const result = Array.from(projects.entries()).map(([name, projectPath]) => ({
             name,
-            path,
+            path: projectPath,
         }));
+        return result;
     }
     getTreeItem(element) {
         return element;
@@ -187,6 +204,10 @@ class ServerItem extends vscode.TreeItem {
                 case "starting":
                     this.iconPath = new vscode.ThemeIcon("loading~spin");
                     this.description = "🟡 Starting";
+                    break;
+                case "restarting":
+                    this.iconPath = new vscode.ThemeIcon("sync~spin");
+                    this.description = "🔄 Restarting";
                     break;
                 case "error":
                     this.iconPath = new vscode.ThemeIcon("error");

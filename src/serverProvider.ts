@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { ServerConfigManager, ServerConfig } from "./serverConfig";
 
 export interface ServerStatus {
-  [key: string]: "running" | "stopped" | "starting" | "error";
+  [key: string]: "running" | "stopped" | "starting" | "error" | "restarting";
 }
 
 export class ServerRunnerProvider
@@ -36,7 +37,7 @@ export class ServerRunnerProvider
 
   updateServerStatus(
     serverKey: string,
-    status: "running" | "stopped" | "starting" | "error"
+    status: "running" | "stopped" | "starting" | "error" | "restarting"
   ): void {
     this.serverStatus[serverKey] = status;
     this.refresh();
@@ -44,7 +45,7 @@ export class ServerRunnerProvider
 
   getServerStatus(
     serverKey: string
-  ): "running" | "stopped" | "starting" | "error" {
+  ): "running" | "stopped" | "starting" | "error" | "restarting" {
     return this.serverStatus[serverKey] || "stopped";
   }
 
@@ -56,9 +57,24 @@ export class ServerRunnerProvider
     const servers = this.configManager.getServers();
     const projects = new Map<string, string>();
 
+    // Get workspace folder for resolving relative paths
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    const workspaceRoot =
+      workspaceFolders && workspaceFolders.length > 0
+        ? workspaceFolders[0].uri.fsPath
+        : "";
+
     // Group servers by their parent project directory
     servers.forEach((server) => {
-      const workingDir = server.workingDirectory;
+      let workingDir = server.workingDirectory;
+
+      // If path is relative, resolve it from workspace root
+      if (!path.isAbsolute(workingDir) && workspaceRoot) {
+        workingDir = path.join(workspaceRoot, workingDir);
+      }
+
+      // Ensure we have an absolute path
+      workingDir = path.resolve(workingDir);
 
       // Try to find the project root (parent of backend/frontend)
       const parts = workingDir.split(/[\/\\]/);
@@ -68,8 +84,8 @@ export class ServerRunnerProvider
       let projectName = "";
 
       // Check if path contains backend or frontend
-      const backendIndex = parts.findIndex((p) => p === "backend");
-      const frontendIndex = parts.findIndex((p) => p === "frontend");
+      const backendIndex = parts.findIndex((p: string) => p === "backend");
+      const frontendIndex = parts.findIndex((p: string) => p === "frontend");
 
       if (backendIndex > 0) {
         // Project root is parent of backend folder
@@ -81,15 +97,23 @@ export class ServerRunnerProvider
         projectName = parts[frontendIndex - 1];
       }
 
+      // Ensure projectRoot is absolute
+      if (projectRoot && !projectRoot.startsWith("/")) {
+        projectRoot = "/" + projectRoot;
+      }
+
       if (projectRoot && projectName && !projects.has(projectName)) {
         projects.set(projectName, projectRoot);
       }
     });
 
-    return Array.from(projects.entries()).map(([name, path]) => ({
-      name,
-      path,
-    }));
+    const result = Array.from(projects.entries()).map(
+      ([name, projectPath]) => ({
+        name,
+        path: projectPath,
+      })
+    );
+    return result;
   }
 
   getTreeItem(element: ServerItem): vscode.TreeItem {
@@ -225,7 +249,12 @@ export class ServerItem extends vscode.TreeItem {
       | "buildFolder"
       | "buildManager",
     public readonly contextValue?: string,
-    public readonly status?: "running" | "stopped" | "starting" | "error",
+    public readonly status?:
+      | "running"
+      | "stopped"
+      | "starting"
+      | "error"
+      | "restarting",
     public readonly projectPath?: string,
     public readonly projectName?: string
   ) {
@@ -277,6 +306,10 @@ export class ServerItem extends vscode.TreeItem {
         case "starting":
           this.iconPath = new vscode.ThemeIcon("loading~spin");
           this.description = "🟡 Starting";
+          break;
+        case "restarting":
+          this.iconPath = new vscode.ThemeIcon("sync~spin");
+          this.description = "🔄 Restarting";
           break;
         case "error":
           this.iconPath = new vscode.ThemeIcon("error");
