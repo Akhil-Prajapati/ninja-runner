@@ -639,11 +639,15 @@ function resolveBuildPaths(projectPath) {
     try {
         fs.chmodSync(scriptPath, "755");
     }
-    catch { /* Windows */ }
+    catch {
+        /* Windows */
+    }
     try {
         fs.unlinkSync(markerFile);
     }
-    catch { /* ok */ }
+    catch {
+        /* ok */
+    }
     return { fullPath, projectName, script, markerFile };
 }
 /** Open the built/<env>/ output folder in the OS file manager. */
@@ -686,7 +690,9 @@ expectedMarker) {
                 vscode.window.showInformationMessage(`✅ ${projectName} [${envLabel}] complete!`);
             }
         }
-        catch { /* ignore */ }
+        catch {
+            /* ignore */
+        }
     };
     watcher.onDidCreate(handleMarker);
     watcher.onDidChange(handleMarker);
@@ -764,7 +770,9 @@ async function buildProject(projectPath) {
                 vscode.window.showInformationMessage(`✅ ${projectName} — staging + prod complete!`);
             }
         }
-        catch { /* ignore */ }
+        catch {
+            /* ignore */
+        }
     };
     watcher.onDidCreate(handleMarker);
     watcher.onDidChange(handleMarker);
@@ -1968,7 +1976,8 @@ async function checkForUpdates(context) {
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
         const installedVersion = packageJson.version;
         const extensionName = packageJson.displayName || packageJson.name;
-        const isUpdate = installedVersion !== lastNotifiedVersion && lastNotifiedVersion !== "0.0.0";
+        const isUpdate = installedVersion !== lastNotifiedVersion &&
+            lastNotifiedVersion !== "0.0.0";
         const isFirstRun = lastNotifiedVersion === "0.0.0";
         // ── Auto-replace managed build.sh files on every version change ──────────
         if (isUpdate || isFirstRun) {
@@ -2034,25 +2043,15 @@ async function autoReplaceBuildScripts(context, newVersion) {
                 try {
                     fs.chmodSync(file.fsPath, "755");
                 }
-                catch { /* Windows */ }
+                catch {
+                    /* Windows */
+                }
                 replaced++;
                 console.log(`[Ninja Runner] Updated build.sh at ${file.fsPath} (${fileVersion} → ${newVersion})`);
             }
             else {
-                // Unmanaged file — ask the user before touching it
-                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
-                const relativePath = path.relative(workspaceRoot, file.fsPath);
-                const answer = await vscode.window.showInformationMessage(`Ninja Runner: A build.sh already exists at "${relativePath}". Replace it with the Ninja Runner managed version?`, { modal: true }, "Replace", "Skip");
-                if (answer !== "Replace") {
-                    continue;
-                }
-                fs.writeFileSync(file.fsPath, templateContent, "utf8");
-                try {
-                    fs.chmodSync(file.fsPath, "755");
-                }
-                catch { /* Windows */ }
-                replaced++;
-                console.log(`[Ninja Runner] Replaced unmanaged build.sh at ${file.fsPath} with v${newVersion}`);
+                // Unmanaged file — skip silently, user has their own build.sh
+                console.log(`[Ninja Runner] Skipping unmanaged build.sh at ${file.fsPath}`);
             }
         }
         catch (err) {

@@ -37,7 +37,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Create decoration provider first — ServerRunnerProvider needs it
   const decorationProvider = new ServerDecorationProvider();
   context.subscriptions.push(
-    vscode.window.registerFileDecorationProvider(decorationProvider)
+    vscode.window.registerFileDecorationProvider(decorationProvider),
   );
 
   serverProvider = new ServerRunnerProvider(decorationProvider);
@@ -212,7 +212,9 @@ export function activate(context: vscode.ExtensionContext) {
       "serverRunner.startDynamicServer",
       (itemOrContextValue: ServerItem | string) => {
         const contextValue = resolveContextValue(itemOrContextValue);
-        if (!contextValue) { return; }
+        if (!contextValue) {
+          return;
+        }
         const serverId = extractServerId(contextValue);
         const serverConfig = configManager.getServerById(serverId);
         if (serverConfig) {
@@ -225,7 +227,9 @@ export function activate(context: vscode.ExtensionContext) {
       "serverRunner.retryServer",
       (itemOrContextValue: ServerItem | string) => {
         const contextValue = resolveContextValue(itemOrContextValue);
-        if (!contextValue) { return; }
+        if (!contextValue) {
+          return;
+        }
         const serverId = extractServerId(contextValue);
         const serverConfig = configManager.getServerById(serverId);
         if (serverConfig) {
@@ -280,7 +284,9 @@ export function activate(context: vscode.ExtensionContext) {
       "serverRunner.buildProject",
       (item: BuildItem | string) => {
         const projectPath = typeof item === "string" ? item : item?.projectPath;
-        if (!projectPath) { return; }
+        if (!projectPath) {
+          return;
+        }
         buildProject(projectPath);
       },
     ),
@@ -289,7 +295,9 @@ export function activate(context: vscode.ExtensionContext) {
       "serverRunner.buildProjectStaging",
       (item: BuildItem | string) => {
         const projectPath = typeof item === "string" ? item : item?.projectPath;
-        if (!projectPath) { return; }
+        if (!projectPath) {
+          return;
+        }
         runSingleEnvBuild(projectPath, "zip war staging", "staging", "staging");
       },
     ),
@@ -298,7 +306,9 @@ export function activate(context: vscode.ExtensionContext) {
       "serverRunner.buildProjectProd",
       (item: BuildItem | string) => {
         const projectPath = typeof item === "string" ? item : item?.projectPath;
-        if (!projectPath) { return; }
+        if (!projectPath) {
+          return;
+        }
         runSingleEnvBuild(projectPath, "zip war", "prod", "prod");
       },
     ),
@@ -829,15 +839,25 @@ async function stopServer(serverId: string) {
 /** Resolve workspace / script paths for a build project. */
 function resolveBuildPaths(projectPath: string) {
   const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders) { return null; }
+  if (!workspaceFolders) {
+    return null;
+  }
   const workspaceRoot = workspaceFolders[0].uri.fsPath;
-  const fullPath      = path.join(workspaceRoot, projectPath);
-  const projectName   = path.basename(projectPath);
-  const scriptPath    = path.join(extensionContext.extensionPath, "build.sh");
-  const markerFile    = path.join(fullPath, ".ninja_build_status");
-  const script        = scriptPath.replace(/\\/g, "/");
-  try { fs.chmodSync(scriptPath, "755"); } catch { /* Windows */ }
-  try { fs.unlinkSync(markerFile); }      catch { /* ok */       }
+  const fullPath = path.join(workspaceRoot, projectPath);
+  const projectName = path.basename(projectPath);
+  const scriptPath = path.join(extensionContext.extensionPath, "build.sh");
+  const markerFile = path.join(fullPath, ".ninja_build_status");
+  const script = scriptPath.replace(/\\/g, "/");
+  try {
+    fs.chmodSync(scriptPath, "755");
+  } catch {
+    /* Windows */
+  }
+  try {
+    fs.unlinkSync(markerFile);
+  } catch {
+    /* ok */
+  }
   return { fullPath, projectName, script, markerFile };
 }
 
@@ -851,10 +871,10 @@ function openBuiltFolder(fullPath: string, env: string) {
 
 /** Build a single environment (staging or prod). */
 async function runSingleEnvBuild(
-  projectPath:    string,
-  envArgs:        string,   // e.g. "zip war staging"
-  envLabel:       string,   // display label
-  expectedMarker: string,   // marker value written by build.sh
+  projectPath: string,
+  envArgs: string, // e.g. "zip war staging"
+  envLabel: string, // display label
+  expectedMarker: string, // marker value written by build.sh
 ) {
   const resolved = resolveBuildPaths(projectPath);
   if (!resolved) {
@@ -867,14 +887,21 @@ async function runSingleEnvBuild(
 
   const terminal = vscode.window.createTerminal({
     name: `Build: ${projectName}  [${envLabel}]`,
-    cwd:  fullPath,
+    cwd: fullPath,
   });
   terminal.show();
-  terminal.sendText(`NINJA_BUILD_DIR="${fullPath}" bash "${script}" ${envArgs}`);
-  vscode.window.showInformationMessage(`Building ${projectName} [${envLabel}]…`);
+  terminal.sendText(
+    `NINJA_BUILD_DIR="${fullPath}" bash "${script}" ${envArgs}`,
+  );
+  vscode.window.showInformationMessage(
+    `Building ${projectName} [${envLabel}]…`,
+  );
 
   const watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(vscode.Uri.file(fullPath), ".ninja_build_status"),
+    new vscode.RelativePattern(
+      vscode.Uri.file(fullPath),
+      ".ninja_build_status",
+    ),
   );
 
   let done = false;
@@ -889,21 +916,29 @@ async function runSingleEnvBuild(
         watcher.dispose();
         serverProvider.updateBuildStatus(projectPath, "done");
         openBuiltFolder(fullPath, env);
-        vscode.window.showInformationMessage(`✅ ${projectName} [${envLabel}] complete!`);
+        vscode.window.showInformationMessage(
+          `✅ ${projectName} [${envLabel}] complete!`,
+        );
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   };
 
   watcher.onDidCreate(handleMarker);
   watcher.onDidChange(handleMarker);
 
   const closeDisposable = vscode.window.onDidCloseTerminal((closed) => {
-    if (closed !== terminal) { return; }
+    if (closed !== terminal) {
+      return;
+    }
     closeDisposable.dispose();
     if (!done) {
       watcher.dispose();
       serverProvider.updateBuildStatus(projectPath, "error");
-      vscode.window.showErrorMessage(`❌ ${projectName} [${envLabel}] build failed.`);
+      vscode.window.showErrorMessage(
+        `❌ ${projectName} [${envLabel}] build failed.`,
+      );
     }
   });
 }
@@ -922,18 +957,23 @@ async function buildProject(projectPath: string) {
   // ── Phase 1: Staging ──────────────────────────────────────────────────────
   const stagingTerminal = vscode.window.createTerminal({
     name: `Build: ${projectName}  [staging]`,
-    cwd:  fullPath,
+    cwd: fullPath,
   });
   stagingTerminal.show();
-  stagingTerminal.sendText(`NINJA_BUILD_DIR="${fullPath}" bash "${script}" zip war staging`);
+  stagingTerminal.sendText(
+    `NINJA_BUILD_DIR="${fullPath}" bash "${script}" zip war staging`,
+  );
   vscode.window.showInformationMessage(`Building ${projectName}: staging…`);
 
   const watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(vscode.Uri.file(fullPath), ".ninja_build_status"),
+    new vscode.RelativePattern(
+      vscode.Uri.file(fullPath),
+      ".ninja_build_status",
+    ),
   );
 
   let stagingDone = false;
-  let prodDone    = false;
+  let prodDone = false;
   let prodTerminal: vscode.Terminal | undefined;
   let prodCloseDisposable: vscode.Disposable | undefined;
 
@@ -946,28 +986,35 @@ async function buildProject(projectPath: string) {
       if (env === "staging" && !stagingDone) {
         stagingDone = true;
         stagingTerminal.dispose();
-        vscode.window.showInformationMessage(`✅ ${projectName} staging done — starting prod…`);
+        vscode.window.showInformationMessage(
+          `✅ ${projectName} staging done — starting prod…`,
+        );
 
         setTimeout(() => {
           prodTerminal = vscode.window.createTerminal({
             name: `Build: ${projectName}  [prod]`,
-            cwd:  fullPath,
+            cwd: fullPath,
           });
           prodTerminal.show();
-          prodTerminal.sendText(`NINJA_BUILD_DIR="${fullPath}" bash "${script}" zip war`);
+          prodTerminal.sendText(
+            `NINJA_BUILD_DIR="${fullPath}" bash "${script}" zip war`,
+          );
 
           // Fallback: prod terminal closed without writing marker = error
           prodCloseDisposable = vscode.window.onDidCloseTerminal((closed) => {
-            if (closed !== prodTerminal) { return; }
+            if (closed !== prodTerminal) {
+              return;
+            }
             prodCloseDisposable?.dispose();
             if (!prodDone) {
               watcher.dispose();
               serverProvider.updateBuildStatus(projectPath, "error");
-              vscode.window.showErrorMessage(`❌ ${projectName} prod build failed.`);
+              vscode.window.showErrorMessage(
+                `❌ ${projectName} prod build failed.`,
+              );
             }
           });
         }, 800);
-
       } else if (env === "prod" && !prodDone) {
         prodDone = true;
         prodCloseDisposable?.dispose();
@@ -975,9 +1022,13 @@ async function buildProject(projectPath: string) {
         watcher.dispose();
         serverProvider.updateBuildStatus(projectPath, "done");
         openBuiltFolder(fullPath, "prod");
-        vscode.window.showInformationMessage(`✅ ${projectName} — staging + prod complete!`);
+        vscode.window.showInformationMessage(
+          `✅ ${projectName} — staging + prod complete!`,
+        );
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   };
 
   watcher.onDidCreate(handleMarker);
@@ -985,7 +1036,9 @@ async function buildProject(projectPath: string) {
 
   // Fallback: staging terminal closed without writing marker = error
   const stagingCloseDisposable = vscode.window.onDidCloseTerminal((closed) => {
-    if (closed !== stagingTerminal) { return; }
+    if (closed !== stagingTerminal) {
+      return;
+    }
     stagingCloseDisposable.dispose();
     if (!stagingDone) {
       watcher.dispose();
@@ -996,7 +1049,8 @@ async function buildProject(projectPath: string) {
 }
 
 // Run backend server in debug mode
-async function runServerInDebug(serverId: string) {  const serverConfig = configManager.getServerById(serverId);
+async function runServerInDebug(serverId: string) {
+  const serverConfig = configManager.getServerById(serverId);
   if (!serverConfig) {
     vscode.window.showErrorMessage("Server not found!");
     return;
@@ -2284,7 +2338,9 @@ function extractServerId(contextValue: string): string {
 
 // Resolve contextValue from either a raw string or a ServerItem object
 // (inline tree-view buttons pass the ServerItem; click-commands pass the string)
-function resolveContextValue(itemOrContextValue: ServerItem | string): string | undefined {
+function resolveContextValue(
+  itemOrContextValue: ServerItem | string,
+): string | undefined {
   if (typeof itemOrContextValue === "string") {
     return itemOrContextValue;
   }
@@ -2626,11 +2682,13 @@ async function checkForUpdates(context: vscode.ExtensionContext) {
 
   try {
     const packageJsonPath = path.join(context.extensionPath, "package.json");
-    const packageJson     = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
     const installedVersion = packageJson.version;
-    const extensionName    = packageJson.displayName || packageJson.name;
+    const extensionName = packageJson.displayName || packageJson.name;
 
-    const isUpdate   = installedVersion !== lastNotifiedVersion && lastNotifiedVersion !== "0.0.0";
+    const isUpdate =
+      installedVersion !== lastNotifiedVersion &&
+      lastNotifiedVersion !== "0.0.0";
     const isFirstRun = lastNotifiedVersion === "0.0.0";
 
     // ── Auto-replace managed build.sh files on every version change ──────────
@@ -2708,36 +2766,27 @@ async function autoReplaceBuildScripts(
 
       if (content.includes("# NINJA_RUNNER_VERSION=")) {
         // Managed file — check version and auto-replace if outdated
-        const match       = content.match(/^# NINJA_RUNNER_VERSION=(.+)$/m);
+        const match = content.match(/^# NINJA_RUNNER_VERSION=(.+)$/m);
         const fileVersion = match ? match[1].trim() : "";
         if (fileVersion === newVersion) {
           continue; // already up to date
         }
 
         fs.writeFileSync(file.fsPath, templateContent, "utf8");
-        try { fs.chmodSync(file.fsPath, "755"); } catch { /* Windows */ }
-        replaced++;
-        console.log(`[Ninja Runner] Updated build.sh at ${file.fsPath} (${fileVersion} → ${newVersion})`);
-      } else {
-        // Unmanaged file — ask the user before touching it
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
-        const relativePath  = path.relative(workspaceRoot, file.fsPath);
-
-        const answer = await vscode.window.showInformationMessage(
-          `Ninja Runner: A build.sh already exists at "${relativePath}". Replace it with the Ninja Runner managed version?`,
-          { modal: true },
-          "Replace",
-          "Skip",
-        );
-
-        if (answer !== "Replace") {
-          continue;
+        try {
+          fs.chmodSync(file.fsPath, "755");
+        } catch {
+          /* Windows */
         }
-
-        fs.writeFileSync(file.fsPath, templateContent, "utf8");
-        try { fs.chmodSync(file.fsPath, "755"); } catch { /* Windows */ }
         replaced++;
-        console.log(`[Ninja Runner] Replaced unmanaged build.sh at ${file.fsPath} with v${newVersion}`);
+        console.log(
+          `[Ninja Runner] Updated build.sh at ${file.fsPath} (${fileVersion} → ${newVersion})`,
+        );
+      } else {
+        // Unmanaged file — skip silently, user has their own build.sh
+        console.log(
+          `[Ninja Runner] Skipping unmanaged build.sh at ${file.fsPath}`,
+        );
       }
     } catch (err) {
       console.error(`[Ninja Runner] Failed to update ${file.fsPath}:`, err);
