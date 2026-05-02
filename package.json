@@ -2,7 +2,7 @@
   "name": "ninja-runner",
   "displayName": "Ninja Runner",
   "description": "Universal development server runner - Auto-detect and run any frontend/backend projects",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "akhilninja",
   "icon": "ninja-server-icon.png",
   "engines": {
@@ -53,7 +53,7 @@
         {
           "id": "serverRunner",
           "title": "Ninja Runner",
-          "icon": "$(server-process)"
+          "icon": "ninja-star.svg"
         }
       ]
     },

@@ -1,5 +1,5 @@
 #!/bin/bash
-# NINJA_RUNNER_VERSION=0.1.7
+# NINJA_RUNNER_VERSION=0.1.8
 # ──────────────────────────────────────────────────────────────────────────────
 #   Ninja Runner  |  Build Script
 #   Author : Maharshi Bhavsar

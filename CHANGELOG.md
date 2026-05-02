@@ -1,5 +1,26 @@
 # Change Log
 
+## [0.1.8] - 2026-05-02 - Build Manager Overhaul & New Icon
+
+### 🏗️ Build Manager
+
+- ✅ **Three build modes** — separate _Build Staging_, _Build Prod_, and _Build Both_ inline buttons per project
+- ✅ **Open folder on complete** — `built/prod/` (or `built/staging/`) opens automatically in the OS file manager after a successful build
+- ✅ **Fixed build status bug** — status now correctly shows "Built ✓" after prod completes instead of reverting to "Building…"
+- ✅ **Two-terminal pipeline** — staging terminal auto-closes, prod terminal opens fresh; unified marker handler prevents race conditions
+
+### 🎨 UI
+
+- ✅ **New activity bar icon** — server window frame with a pinwheel shuriken inside
+- ✅ **New extension icon** — 4-pointed shuriken on dark rounded background
+- ✅ **Distinct Build Manager item icons** — project items now use `$(repo)` blue instead of the same purple package as the folder header
+
+### 🔧 build.sh
+
+- ✅ **Removed nautilus call** — folder opening is now handled exclusively by the extension (prevents the folder closing immediately when the terminal is disposed)
+
+---
+
 ## [0.1.7] - 2025-12-11 - Removed Marker Files & Cleaner Build Flow
 
 ### 🎯 Improvements
