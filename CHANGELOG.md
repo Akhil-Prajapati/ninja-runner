@@ -1,5 +1,28 @@
 # Change Log
 
+## [0.1.7] - 2025-12-11 - Removed Marker Files & Cleaner Build Flow
+
+### 🎯 Improvements
+
+- ✅ **Removed Marker Files** - No longer generates `.ninja_build_complete` file
+- ✅ **Simplified Build Detection** - Build monitoring now checks terminal exit status instead of file markers
+- ✅ **Cleaner Implementation** - Removed unnecessary file system checks for build completion
+- ✅ **Patch Build Script** - Click "Patch Build Script" to auto-replace your build.sh with latest template
+- ✅ **Full User Control** - All frontend restart logic is commented out with instructions for optional use
+
+---
+
+## [0.1.6] - 2025-12-10 - Optional Frontend Auto-Restart
+
+### 🔧 Changes
+
+- ✅ **Frontend Restart Optional** - Auto-restart code is now commented out, users manage frontend restart manually
+- ✅ **Cleaner Build Output** - Build.sh and extension no longer force restart
+- ✅ **User Control** - Users can uncomment code if they want auto-restart functionality
+- ✅ **Simplified Build Messages** - Removed status indicators for restarting servers
+
+---
+
 ## [0.1.5] - 2025-12-08 - Build Manager & Smart Automation
 
 ### 🏗️ Build Manager

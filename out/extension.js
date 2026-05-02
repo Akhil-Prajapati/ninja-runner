@@ -40,7 +40,7 @@ let statusBarItems = [];
 let isAutoDetectDone = false;
 let extensionContext;
 function activate(context) {
-    console.log("🥷 Ninja Runner extension is now active!");
+    console.log("Ninja Runner extension is now active!");
     // Store extension context for persistence
     extensionContext = context;
     // Check for updates and notify user
@@ -48,7 +48,10 @@ function activate(context) {
     // Set context to show the view
     vscode.commands.executeCommand("setContext", "serverRunnerEnabled", true);
     configManager = serverConfig_1.ServerConfigManager.getInstance();
-    serverProvider = new serverProvider_1.ServerRunnerProvider();
+    // Create decoration provider first — ServerRunnerProvider needs it
+    const decorationProvider = new serverProvider_1.ServerDecorationProvider();
+    context.subscriptions.push(vscode.window.registerFileDecorationProvider(decorationProvider));
+    serverProvider = new serverProvider_1.ServerRunnerProvider(decorationProvider);
     vscode.window.registerTreeDataProvider("serverRunnerView", serverProvider);
     // Load saved user preferences
     loadUserPreferences();
@@ -94,7 +97,7 @@ function activate(context) {
     });
     // Reset configuration command
     const resetConfigCommand = vscode.commands.registerCommand("serverRunner.resetConfiguration", async () => {
-        const confirmation = await vscode.window.showWarningMessage("🔄 This will clear all current server configurations and let you reselect projects. Continue?", { modal: true }, "Yes, Reset", "Cancel");
+        const confirmation = await vscode.window.showWarningMessage("This will clear all current server configurations and let you reselect projects. Continue?", { modal: true }, "Yes, Reset", "Cancel");
         if (confirmation === "Yes, Reset") {
             // Note: Don't clear saved preferences here, let auto-detect preserve selections
             // Trigger auto-detection with user selection (which will now preserve previous choices)
@@ -103,7 +106,7 @@ function activate(context) {
     });
     // Clear all selections command - for when users want to start completely fresh
     const clearAllSelectionsCommand = vscode.commands.registerCommand("serverRunner.clearAllSelections", async () => {
-        const confirmation = await vscode.window.showWarningMessage("🗑️ This will completely clear all server selections and preferences. You'll need to reselect all projects from scratch. Continue?", { modal: true }, "Yes, Clear All", "Cancel");
+        const confirmation = await vscode.window.showWarningMessage("This will completely clear all server selections and preferences. You'll need to reselect all projects from scratch. Continue?", { modal: true }, "Yes, Clear All", "Cancel");
         if (confirmation === "Yes, Clear All") {
             // Clear saved preferences completely
             extensionContext.workspaceState.update("ninja-runner-servers", undefined);
@@ -111,13 +114,14 @@ function activate(context) {
             serverProvider.refresh();
             // Trigger auto-detection with fresh selection
             await autoDetectProjects();
-            vscode.window.showInformationMessage("🗑️ All selections cleared! Please reselect your projects.");
+            vscode.window.showInformationMessage("All selections cleared. Please reselect your projects.");
         }
     });
     // Install dependencies command
-    const installDepsCommand = vscode.commands.registerCommand("serverRunner.installDependencies", (item) => {
-        if (item.contextValue) {
-            const serverId = extractServerId(item.contextValue);
+    const installDepsCommand = vscode.commands.registerCommand("serverRunner.installDependencies", (itemOrContextValue) => {
+        const contextValue = resolveContextValue(itemOrContextValue);
+        if (contextValue) {
+            const serverId = extractServerId(contextValue);
             installDependencies(serverId);
         }
     });
@@ -148,14 +152,22 @@ function activate(context) {
         vscode.commands.registerCommand("serverRunner.refresh", () => {
             serverProvider.refresh();
         }),
-        vscode.commands.registerCommand("serverRunner.startDynamicServer", (contextValue) => {
+        vscode.commands.registerCommand("serverRunner.startDynamicServer", (itemOrContextValue) => {
+            const contextValue = resolveContextValue(itemOrContextValue);
+            if (!contextValue) {
+                return;
+            }
             const serverId = extractServerId(contextValue);
             const serverConfig = configManager.getServerById(serverId);
             if (serverConfig) {
                 startServer(serverConfig.name, serverConfig.command, serverId);
             }
         }),
-        vscode.commands.registerCommand("serverRunner.retryServer", (contextValue) => {
+        vscode.commands.registerCommand("serverRunner.retryServer", (itemOrContextValue) => {
+            const contextValue = resolveContextValue(itemOrContextValue);
+            if (!contextValue) {
+                return;
+            }
             const serverId = extractServerId(contextValue);
             const serverConfig = configManager.getServerById(serverId);
             if (serverConfig) {
@@ -167,54 +179,49 @@ function activate(context) {
         vscode.commands.registerCommand("serverRunner.addServer", () => {
             addNewServer();
         }),
-        vscode.commands.registerCommand("serverRunner.editServer", (item) => {
-            if (item.contextValue) {
-                editServer(item.contextValue);
+        vscode.commands.registerCommand("serverRunner.editServer", (itemOrContextValue) => {
+            const contextValue = resolveContextValue(itemOrContextValue);
+            if (contextValue) {
+                editServer(contextValue);
             }
         }),
-        vscode.commands.registerCommand("serverRunner.stopServer", (item) => {
-            if (item.contextValue) {
-                const serverId = extractServerId(item.contextValue);
+        vscode.commands.registerCommand("serverRunner.stopServer", (itemOrContextValue) => {
+            const contextValue = resolveContextValue(itemOrContextValue);
+            if (contextValue) {
+                const serverId = extractServerId(contextValue);
                 stopServer(serverId);
             }
         }),
         vscode.commands.registerCommand("serverRunner.checkForUpdates", () => {
             checkForUpdates(extensionContext);
         }),
-        vscode.commands.registerCommand("serverRunner.runInDebug", (item) => {
-            if (item.contextValue) {
-                const serverId = extractServerId(item.contextValue);
+        vscode.commands.registerCommand("serverRunner.runInDebug", (itemOrContextValue) => {
+            const contextValue = resolveContextValue(itemOrContextValue);
+            if (contextValue) {
+                const serverId = extractServerId(contextValue);
                 runServerInDebug(serverId);
             }
         }),
-        vscode.commands.registerCommand("serverRunner.triggerBuild", (contextValue) => {
-            if (contextValue) {
-                // contextValue format: "build:environment:projectPath"
-                const parts = contextValue.split(":");
-                if (parts.length >= 3) {
-                    const environment = parts[1];
-                    const projectPath = parts.slice(2).join(":"); // Rejoin in case path has colons
-                    triggerBuild(environment, projectPath);
-                }
+        vscode.commands.registerCommand("serverRunner.buildProject", (item) => {
+            const projectPath = typeof item === "string" ? item : item?.projectPath;
+            if (!projectPath) {
+                return;
             }
+            buildProject(projectPath);
         }),
-        vscode.commands.registerCommand("serverRunner.patchBuildScript", async (item) => {
-            if (item && item.projectPath) {
-                const buildScriptPath = await findBuildScriptInProject(item.projectPath);
-                if (buildScriptPath) {
-                    try {
-                        await patchBuildScript(buildScriptPath);
-                        const projectName = path.basename(item.projectPath);
-                        vscode.window.showInformationMessage(`✅ Successfully patched ${projectName}/build.sh!`);
-                    }
-                    catch (error) {
-                        vscode.window.showErrorMessage(`❌ Failed to patch build.sh: ${error}`);
-                    }
-                }
-                else {
-                    vscode.window.showErrorMessage(`❌ build.sh not found in ${path.basename(item.projectPath)}`);
-                }
+        vscode.commands.registerCommand("serverRunner.buildProjectStaging", (item) => {
+            const projectPath = typeof item === "string" ? item : item?.projectPath;
+            if (!projectPath) {
+                return;
             }
+            runSingleEnvBuild(projectPath, "zip war staging", "staging", "staging");
+        }),
+        vscode.commands.registerCommand("serverRunner.buildProjectProd", (item) => {
+            const projectPath = typeof item === "string" ? item : item?.projectPath;
+            if (!projectPath) {
+                return;
+            }
+            runSingleEnvBuild(projectPath, "zip war", "prod", "prod");
         }),
     ];
     // Listen for debug session termination
@@ -259,7 +266,7 @@ function autoStartAllServersOnActivation() {
     // Show progress notification
     vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
-        title: "🚀 Ninja launching all servers...",
+        title: "Starting all servers...",
         cancellable: false,
     }, async (progress) => {
         const totalServers = servers.length;
@@ -273,10 +280,10 @@ function autoStartAllServersOnActivation() {
             startServer(server.name, server.command, server.id);
             await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        progress.report({ increment: 100, message: "All servers launched! 🥷" });
+        progress.report({ increment: 100, message: "All servers launched." });
         return new Promise((resolve) => {
             setTimeout(() => {
-                vscode.window.showInformationMessage("🎯 All ninja servers are now running!");
+                vscode.window.showInformationMessage("All servers are running.");
                 createStatusBar();
                 resolve(undefined);
             }, 500);
@@ -504,9 +511,9 @@ async function addNewServer() {
     if (!workingDirectory)
         return;
     const emoji = await vscode.window.showInputBox({
-        prompt: "Enter an emoji for the server",
-        placeHolder: "e.g., 🚀",
-        value: type === "frontend" ? "🌐" : "⚙️",
+        prompt: "Enter an icon label for the server (optional)",
+        placeHolder: "e.g., api, web, auth",
+        value: type === "frontend" ? "web" : "api",
     });
     const id = configManager.generateUniqueId(name);
     const category = type === "frontend" ? "Frontend Servers" : "Backend Servers";
@@ -516,7 +523,7 @@ async function addNewServer() {
         type: type,
         command,
         workingDirectory,
-        emoji: emoji || (type === "frontend" ? "🌐" : "⚙️"),
+        emoji: emoji || (type === "frontend" ? "web" : "api"),
         category: category,
     };
     configManager.addServer(newServer);
@@ -581,7 +588,7 @@ async function deleteServer(serverId) {
         configManager.deleteServer(serverId);
         saveUserPreferences();
         serverProvider.refresh();
-        vscode.window.showInformationMessage(`🥷 Ninja removed ${serverConfig.name} server!`);
+        vscode.window.showInformationMessage(`Removed ${serverConfig.name}.`);
     }
 }
 async function stopServer(serverId) {
@@ -614,7 +621,165 @@ async function stopServer(serverId) {
     delete terminals[serverId];
     // Update status
     serverProvider.updateServerStatus(serverId, "stopped");
-    vscode.window.showInformationMessage(`🛑 Stopped ${serverConfig.name} server!`);
+    vscode.window.showInformationMessage(`Stopping ${serverConfig.name}...`);
+}
+// ── Build helpers ─────────────────────────────────────────────────────────────
+/** Resolve workspace / script paths for a build project. */
+function resolveBuildPaths(projectPath) {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        return null;
+    }
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const fullPath = path.join(workspaceRoot, projectPath);
+    const projectName = path.basename(projectPath);
+    const scriptPath = path.join(extensionContext.extensionPath, "build.sh");
+    const markerFile = path.join(fullPath, ".ninja_build_status");
+    const script = scriptPath.replace(/\\/g, "/");
+    try {
+        fs.chmodSync(scriptPath, "755");
+    }
+    catch { /* Windows */ }
+    try {
+        fs.unlinkSync(markerFile);
+    }
+    catch { /* ok */ }
+    return { fullPath, projectName, script, markerFile };
+}
+/** Open the built/<env>/ output folder in the OS file manager. */
+function openBuiltFolder(fullPath, env) {
+    const builtDir = path.join(fullPath, "built", env);
+    if (fs.existsSync(builtDir)) {
+        vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(builtDir));
+    }
+}
+/** Build a single environment (staging or prod). */
+async function runSingleEnvBuild(projectPath, envArgs, // e.g. "zip war staging"
+envLabel, // display label
+expectedMarker) {
+    const resolved = resolveBuildPaths(projectPath);
+    if (!resolved) {
+        vscode.window.showErrorMessage("No workspace folder found!");
+        return;
+    }
+    const { fullPath, projectName, script } = resolved;
+    serverProvider.updateBuildStatus(projectPath, "building");
+    const terminal = vscode.window.createTerminal({
+        name: `Build: ${projectName}  [${envLabel}]`,
+        cwd: fullPath,
+    });
+    terminal.show();
+    terminal.sendText(`NINJA_BUILD_DIR="${fullPath}" bash "${script}" ${envArgs}`);
+    vscode.window.showInformationMessage(`Building ${projectName} [${envLabel}]…`);
+    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(fullPath), ".ninja_build_status"));
+    let done = false;
+    const handleMarker = (uri) => {
+        try {
+            const env = fs.readFileSync(uri.fsPath, "utf8").trim();
+            fs.unlinkSync(uri.fsPath);
+            if (env === expectedMarker && !done) {
+                done = true;
+                terminal.dispose();
+                watcher.dispose();
+                serverProvider.updateBuildStatus(projectPath, "done");
+                openBuiltFolder(fullPath, env);
+                vscode.window.showInformationMessage(`✅ ${projectName} [${envLabel}] complete!`);
+            }
+        }
+        catch { /* ignore */ }
+    };
+    watcher.onDidCreate(handleMarker);
+    watcher.onDidChange(handleMarker);
+    const closeDisposable = vscode.window.onDidCloseTerminal((closed) => {
+        if (closed !== terminal) {
+            return;
+        }
+        closeDisposable.dispose();
+        if (!done) {
+            watcher.dispose();
+            serverProvider.updateBuildStatus(projectPath, "error");
+            vscode.window.showErrorMessage(`❌ ${projectName} [${envLabel}] build failed.`);
+        }
+    });
+}
+/** Build staging then prod sequentially (two terminals). */
+async function buildProject(projectPath) {
+    const resolved = resolveBuildPaths(projectPath);
+    if (!resolved) {
+        vscode.window.showErrorMessage("No workspace folder found!");
+        return;
+    }
+    const { fullPath, projectName, script } = resolved;
+    serverProvider.updateBuildStatus(projectPath, "building");
+    // ── Phase 1: Staging ──────────────────────────────────────────────────────
+    const stagingTerminal = vscode.window.createTerminal({
+        name: `Build: ${projectName}  [staging]`,
+        cwd: fullPath,
+    });
+    stagingTerminal.show();
+    stagingTerminal.sendText(`NINJA_BUILD_DIR="${fullPath}" bash "${script}" zip war staging`);
+    vscode.window.showInformationMessage(`Building ${projectName}: staging…`);
+    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(fullPath), ".ninja_build_status"));
+    let stagingDone = false;
+    let prodDone = false;
+    let prodTerminal;
+    let prodCloseDisposable;
+    // Unified marker handler — handles both "staging" and "prod" markers
+    const handleMarker = (uri) => {
+        try {
+            const env = fs.readFileSync(uri.fsPath, "utf8").trim();
+            fs.unlinkSync(uri.fsPath);
+            if (env === "staging" && !stagingDone) {
+                stagingDone = true;
+                stagingTerminal.dispose();
+                vscode.window.showInformationMessage(`✅ ${projectName} staging done — starting prod…`);
+                setTimeout(() => {
+                    prodTerminal = vscode.window.createTerminal({
+                        name: `Build: ${projectName}  [prod]`,
+                        cwd: fullPath,
+                    });
+                    prodTerminal.show();
+                    prodTerminal.sendText(`NINJA_BUILD_DIR="${fullPath}" bash "${script}" zip war`);
+                    // Fallback: prod terminal closed without writing marker = error
+                    prodCloseDisposable = vscode.window.onDidCloseTerminal((closed) => {
+                        if (closed !== prodTerminal) {
+                            return;
+                        }
+                        prodCloseDisposable?.dispose();
+                        if (!prodDone) {
+                            watcher.dispose();
+                            serverProvider.updateBuildStatus(projectPath, "error");
+                            vscode.window.showErrorMessage(`❌ ${projectName} prod build failed.`);
+                        }
+                    });
+                }, 800);
+            }
+            else if (env === "prod" && !prodDone) {
+                prodDone = true;
+                prodCloseDisposable?.dispose();
+                prodTerminal?.dispose();
+                watcher.dispose();
+                serverProvider.updateBuildStatus(projectPath, "done");
+                openBuiltFolder(fullPath, "prod");
+                vscode.window.showInformationMessage(`✅ ${projectName} — staging + prod complete!`);
+            }
+        }
+        catch { /* ignore */ }
+    };
+    watcher.onDidCreate(handleMarker);
+    watcher.onDidChange(handleMarker);
+    // Fallback: staging terminal closed without writing marker = error
+    const stagingCloseDisposable = vscode.window.onDidCloseTerminal((closed) => {
+        if (closed !== stagingTerminal) {
+            return;
+        }
+        stagingCloseDisposable.dispose();
+        if (!stagingDone) {
+            watcher.dispose();
+            serverProvider.updateBuildStatus(projectPath, "error");
+            vscode.window.showErrorMessage(`❌ ${projectName} staging build failed.`);
+        }
+    });
 }
 // Run backend server in debug mode
 async function runServerInDebug(serverId) {
@@ -700,15 +865,19 @@ async function runServerInDebug(serverId) {
     }
     // Store the debug port for this server
     debugPorts[serverId] = debugPort;
-    // Create new terminal for debug mode
-    const terminal = vscode.window.createTerminal({
+    // Create new terminal for debug mode with PowerShell support on Windows
+    const debugTerminalOptions = {
         name: `${serverConfig.name} (Debug)`,
         cwd: workspaceRoot,
-    });
+    };
+    if (process.platform === "win32") {
+        debugTerminalOptions.shellPath = "powershell.exe";
+    }
+    const terminal = vscode.window.createTerminal(debugTerminalOptions);
     terminals[serverId] = terminal;
     terminal.show();
-    // Fix paths in command for Windows compatibility
-    const fixedCommand = fixPathsInCommand(debugCommand);
+    // Fix paths in command for cross-platform compatibility
+    const fixedCommand = convertCommandForShell(debugCommand);
     terminal.sendText(fixedCommand);
     // Record server start time
     setServerStartTime(serverId, Date.now());
@@ -800,15 +969,19 @@ function startServer(name, command, terminalKey) {
         return;
     }
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
-    // Create new terminal
-    const terminal = vscode.window.createTerminal({
+    // Create new terminal with PowerShell support on Windows
+    const terminalOptions = {
         name: name,
         cwd: workspaceRoot,
-    });
+    };
+    if (process.platform === "win32") {
+        terminalOptions.shellPath = "powershell.exe";
+    }
+    const terminal = vscode.window.createTerminal(terminalOptions);
     terminals[terminalKey] = terminal;
     terminal.show();
-    // Fix any paths in the command for Windows compatibility
-    const fixedCommand = fixPathsInCommand(command);
+    // Fix any paths in the command for cross-platform compatibility
+    const fixedCommand = convertCommandForShell(command);
     terminal.sendText(fixedCommand);
     // Record server start time for health monitoring
     setServerStartTime(terminalKey, Date.now());
@@ -954,7 +1127,7 @@ function stopAllServers() {
         serverProvider.updateServerStatus(terminalKey, "stopped");
     });
     terminals = {}; // Clear all terminal references
-    vscode.window.showInformationMessage("🛑 All servers stopped by ninja power!");
+    vscode.window.showInformationMessage("All servers stopped.");
 }
 // Auto-detect frontend and backend projects
 async function autoDetectProjects() {
@@ -963,7 +1136,7 @@ async function autoDetectProjects() {
         vscode.window.showWarningMessage("No workspace folder found!");
         return;
     }
-    vscode.window.showInformationMessage("🔍 Auto-detecting projects...");
+    vscode.window.showInformationMessage("Auto-detecting projects...");
     // Get currently saved servers to preserve selection state
     const currentServers = configManager.getServers();
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
@@ -994,12 +1167,12 @@ async function autoDetectProjects() {
     // Additional deduplication by path normalization
     const uniqueProjects = deduplicateProjects(detectedProjects);
     if (uniqueProjects.length === 0) {
-        vscode.window.showWarningMessage("🥷 No projects detected in workspace!\n\n" +
+        vscode.window.showWarningMessage("No projects detected in workspace!\n\n" +
             "Make sure your workspace contains:\n" +
-            "• Frontend projects with package.json\n" +
-            "• Backend projects with pom.xml (Spring Boot)\n" +
-            "• Projects not in node_modules or build folders\n\n" +
-            "Check VS Code OUTPUT panel for scan details.");
+            "- Frontend projects with package.json\n" +
+            "- Backend projects with pom.xml (Spring Boot)\n" +
+            "- Projects not in node_modules or build folders\n\n" +
+            "Check the VS Code Output panel for scan details.");
         // Log workspace structure for debugging
         console.log("Workspace folders:", workspaceFolders.map((f) => f.uri.fsPath));
         return;
@@ -1016,10 +1189,10 @@ async function autoDetectProjects() {
         saveUserPreferences();
         serverProvider.refresh();
         if (currentServerPaths && currentServerPaths.size > 0) {
-            vscode.window.showInformationMessage(`✅ Updated server list! ${selectedProjects.length} projects selected (previous selections preserved).`);
+            vscode.window.showInformationMessage(`Server list updated. ${selectedProjects.length} projects selected (previous selections preserved).`);
         }
         else {
-            vscode.window.showInformationMessage(`✅ Added ${selectedProjects.length} selected projects as defaults!`);
+            vscode.window.showInformationMessage(`Added ${selectedProjects.length} selected projects.`);
         }
     }
     else {
@@ -1257,7 +1430,7 @@ function getProjectKey(projectPath, projectName, framework) {
 async function showProjectSelectionDialog(detectedProjects, currentServerPaths, currentServerNames, currentServerNamesLowerCase) {
     // Create quick pick items
     const quickPickItems = detectedProjects.map((project) => {
-        const emoji = project.type === "frontend" ? "🌐" : "⚙️";
+        const icon = project.type === "frontend" ? "$(browser)" : "$(server)";
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
         const relativePath = path.relative(workspaceRoot, project.fullPath);
         // Check if this project was previously selected using multiple matching strategies
@@ -1298,7 +1471,7 @@ async function showProjectSelectionDialog(detectedProjects, currentServerPaths, 
             console.log(`  - Final selection: ${wasSelected}`);
         }
         return {
-            label: `${emoji} ${project.name}`,
+            label: `${icon} ${project.name}`,
             description: `${project.framework} (${project.type})`,
             detail: relativePath,
             picked: wasSelected,
@@ -1519,6 +1692,14 @@ function extractServerId(contextValue) {
     }
     return contextValue;
 }
+// Resolve contextValue from either a raw string or a ServerItem object
+// (inline tree-view buttons pass the ServerItem; click-commands pass the string)
+function resolveContextValue(itemOrContextValue) {
+    if (typeof itemOrContextValue === "string") {
+        return itemOrContextValue;
+    }
+    return itemOrContextValue?.contextValue;
+}
 // Helper function to format path for terminal commands (cross-platform)
 function formatPathForTerminal(relativePath) {
     // Handle empty or current directory paths
@@ -1542,23 +1723,19 @@ function formatPathForTerminal(relativePath) {
     }
     return formattedPath;
 }
-// Helper function to fix paths in terminal commands (for custom commands)
-function fixPathsInCommand(command) {
+// Convert shell command for cross-platform compatibility (including PowerShell on Windows)
+function convertCommandForShell(command) {
     if (process.platform !== "win32") {
-        return command; // Only fix on Windows
+        return command;
     }
-    // Look for cd commands and fix paths in them
-    return command.replace(/cd\s+([^\s&|]+)/g, (match, path) => {
-        // Don't modify if path is already quoted or if it's a simple path like "."
-        if (path.startsWith('"') ||
-            path.startsWith("'") ||
-            path === "." ||
-            path === "./") {
+    // PowerShell uses ';' instead of '&&' for command chaining
+    let converted = command.replace(/\s*&&\s*/g, "; ");
+    // Fix 'cd' paths: convert backslashes to forward slashes and quote if needed
+    converted = converted.replace(/cd\s+([^\s;|]+)/g, (match, p) => {
+        if (p.startsWith('"') || p.startsWith("'") || p === "." || p === "./") {
             return match;
         }
-        // Convert backslashes to forward slashes
-        const fixedPath = path.replace(/\\/g, "/");
-        // Quote if necessary
+        const fixedPath = p.replace(/\\/g, "/");
         if (fixedPath.includes(" ") ||
             fixedPath.includes("&") ||
             fixedPath.includes("(") ||
@@ -1567,6 +1744,11 @@ function fixPathsInCommand(command) {
         }
         return `cd ${fixedPath}`;
     });
+    return converted;
+}
+// Legacy alias kept for any remaining callers
+function fixPathsInCommand(command) {
+    return convertCommandForShell(command);
 }
 // Add detected project to configuration
 async function addDetectedProject(name, fullPath, type, framework) {
@@ -1596,7 +1778,7 @@ async function addDetectedProject(name, fullPath, type, framework) {
             // Default Node.js frontend
             command = `cd ${terminalPath} && npm run dev`;
         }
-        emoji = "🌐";
+        emoji = "web";
     }
     else {
         // Backend commands
@@ -1677,7 +1859,7 @@ async function installDependencies(serverId) {
     }
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
     const projectPath = path.join(workspaceRoot, serverConfig.workingDirectory);
-    vscode.window.showInformationMessage(`📦 Installing dependencies for ${serverConfig.name}...`);
+    vscode.window.showInformationMessage(`Installing dependencies for ${serverConfig.name}...`);
     // Create terminal for dependency installation
     const terminal = vscode.window.createTerminal({
         name: `Install Dependencies - ${serverConfig.name}`,
@@ -1706,11 +1888,11 @@ async function installAllDependencies() {
         vscode.window.showWarningMessage("No servers configured! Use auto-detect to find projects.");
         return;
     }
-    vscode.window.showInformationMessage("� Downloading dependencies for all projects...");
+    vscode.window.showInformationMessage("Downloading dependencies for all projects...");
     // Install dependencies for all servers with progress
     vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
-        title: "📥 Ninja downloading all dependencies...",
+        title: "Downloading all dependencies...",
         cancellable: false,
     }, async (progress) => {
         const totalServers = servers.length;
@@ -1726,10 +1908,10 @@ async function installAllDependencies() {
         }
         progress.report({
             increment: 100,
-            message: "All downloads complete! 📦",
+            message: "All downloads complete.",
         });
     });
-    vscode.window.showInformationMessage("✅ Dependencies download started for all projects!");
+    vscode.window.showInformationMessage("Dependencies download started for all projects.");
 }
 // Create status bar with server controls
 function createStatusBar() {
@@ -1740,7 +1922,7 @@ function createStatusBar() {
     const runningCount = Object.keys(terminals).length;
     // Main status item
     const mainStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    mainStatus.text = `🥷 Servers: ${runningCount}/${servers.length}`;
+    mainStatus.text = `$(server) ${runningCount}/${servers.length} servers`;
     mainStatus.tooltip = "Ninja Runner - Click to open view";
     mainStatus.command = "serverRunner.showView";
     mainStatus.show();
@@ -1778,381 +1960,37 @@ function loadUserPreferences() {
         console.log(`🥷 Loaded ${savedServers.length} saved server configurations`);
     }
 }
-// Trigger build for specific environment and project
-async function triggerBuild(environment, projectPath) {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-        vscode.window.showErrorMessage("❌ No workspace folder found!");
-        return;
-    }
-    // Find build.sh in the specific project path
-    const buildScriptPath = await findBuildScriptInProject(projectPath);
-    if (!buildScriptPath) {
-        vscode.window.showErrorMessage(`❌ build.sh not found in ${projectPath}!`);
-        return;
-    }
-    console.log(`✅ Found build.sh at: ${buildScriptPath}`);
-    const buildScriptDir = path.dirname(buildScriptPath);
-    const projectName = path.basename(projectPath);
-    // Check if build.sh has the completion marker
-    const buildScriptContent = fs.readFileSync(buildScriptPath, "utf8");
-    const hasMarker = buildScriptContent.includes("NINJA_BUILD_COMPLETE");
-    if (!hasMarker) {
-        const action = await vscode.window.showWarningMessage(`⚠️ ${projectName}'s build.sh needs updating for automatic frontend restart. Add completion marker?`, "Add Marker", "Show Instructions", "Skip");
-        if (action === "Add Marker") {
-            // Automatically patch the build.sh
-            await patchBuildScript(buildScriptPath);
-            vscode.window.showInformationMessage(`✅ Updated ${projectName}/build.sh with completion marker!`);
-        }
-        else if (action === "Show Instructions") {
-            const guideUri = vscode.Uri.file(path.join(extensionContext.extensionPath, "BUILD_INTEGRATION.md"));
-            await vscode.commands.executeCommand("vscode.open", guideUri);
-            return;
-        }
-    }
-    // Find application.properties file
-    const appPropertiesPath = await findApplicationProperties(buildScriptDir);
-    if (appPropertiesPath) {
-        // Update spring.profiles.active in application.properties
-        try {
-            const content = fs.readFileSync(appPropertiesPath, "utf8");
-            const updatedContent = content.replace(/spring\.profiles\.active\s*=\s*\w+/, `spring.profiles.active = ${environment}`);
-            fs.writeFileSync(appPropertiesPath, updatedContent, "utf8");
-            console.log(`✅ Updated spring.profiles.active to ${environment}`);
-            vscode.window.showInformationMessage(`✅ Updated profile to ${environment}`);
-        }
-        catch (error) {
-            console.error("Error updating application.properties:", error);
-            vscode.window.showErrorMessage("⚠️ Could not update application.properties, continuing with build...");
-        }
-    }
-    else {
-        console.log("⚠️ application.properties not found, skipping profile update");
-    }
-    // Show progress notification
-    vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `🏗️ Building ${projectName} for ${environment.toUpperCase()}...`,
-        cancellable: false,
-    }, async (progress) => {
-        progress.report({ increment: 0, message: "Starting build process..." });
-        // Mark ALL frontend servers as "restarting" since build.sh will kill/restart them
-        const allServers = configManager.getServers();
-        const frontendServers = allServers.filter((s) => s.type === "frontend");
-        frontendServers.forEach((server) => {
-            serverProvider.updateServerStatus(server.id, "restarting");
-        });
-        // Create a dedicated terminal for the build
-        const buildTerminal = vscode.window.createTerminal({
-            name: `🏗️ ${projectName} Build (${environment})`,
-            cwd: buildScriptDir,
-        });
-        buildTerminal.show();
-        // Execute build command
-        const envArg = environment === "dev" ? "" : environment;
-        const buildCommand = `./build.sh zip war ${envArg}`.trim();
-        console.log(`🏗️ Executing: ${buildCommand}`);
-        // Execute build and monitor for completion
-        buildTerminal.sendText(buildCommand);
-        progress.report({ increment: 10, message: "Build in progress..." });
-        // Check for completion marker file (build.sh will create this)
-        const markerFile = path.join(buildScriptDir, ".ninja_build_complete");
-        // Remove old marker if exists
-        if (fs.existsSync(markerFile)) {
-            fs.unlinkSync(markerFile);
-        }
-        // Wait for build completion (check for marker file or timeout)
-        const maxWaitTime = 120000; // 120 seconds max
-        const checkInterval = 2000; // Check every 2 seconds
-        let elapsedTime = 0;
-        let buildComplete = false;
-        while (!buildComplete && elapsedTime < maxWaitTime) {
-            await new Promise((resolve) => setTimeout(resolve, checkInterval));
-            elapsedTime += checkInterval;
-            // Check if marker file exists
-            if (fs.existsSync(markerFile)) {
-                buildComplete = true;
-                console.log("✅ Build completion marker detected!");
-                // Clean up marker file
-                fs.unlinkSync(markerFile);
-                break;
-            }
-            // Update progress every 5 seconds
-            if (elapsedTime % 5000 === 0) {
-                const progressPercent = Math.min(70, 10 + Math.floor((elapsedTime / maxWaitTime) * 60));
-                progress.report({
-                    message: `Building... (${Math.floor(elapsedTime / 1000)}s)`,
-                });
-            }
-        }
-        if (buildComplete) {
-            console.log("✅ Build completed successfully!");
-            progress.report({
-                increment: 80,
-                message: "Build complete! Finalizing...",
-            });
-        }
-        else {
-            console.log("⚠️ Build timeout - proceeding anyway");
-            progress.report({
-                increment: 80,
-                message: "Build timeout - finalizing...",
-            });
-        }
-        // Give a moment for file system to sync
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        progress.report({ increment: 90, message: "Resetting profile..." });
-        // Reset spring.profiles.active back to dev
-        if (appPropertiesPath) {
-            try {
-                const content = fs.readFileSync(appPropertiesPath, "utf8");
-                const updatedContent = content.replace(/spring\.profiles\.active\s*=\s*\w+/, `spring.profiles.active = dev`);
-                fs.writeFileSync(appPropertiesPath, updatedContent, "utf8");
-                console.log(`✅ Reset spring.profiles.active back to dev`);
-            }
-            catch (error) {
-                console.error("Error resetting application.properties:", error);
-            }
-        }
-        progress.report({ increment: 100, message: "Done!" });
-        // Kill old frontend terminals (Auth and current project)
-        const parentDir = path.dirname(projectPath);
-        const authTerminalKey = `${path.join(parentDir, "Auth")}-frontend`;
-        const projectTerminalKey = `${projectPath}-frontend`;
-        // Close ALL existing frontend terminals
-        vscode.window.terminals.forEach((terminal) => {
-            if (terminal.name.includes("Auth Frontend") ||
-                terminal.name.includes(`${projectName} Frontend`) ||
-                terminal.name.includes("Port 3000") ||
-                terminal.name.includes("Port 3001")) {
-                console.log(`🛑 Closing old terminal: ${terminal.name}`);
-                terminal.dispose();
-            }
-        });
-        if (terminals[authTerminalKey]) {
-            delete terminals[authTerminalKey];
-        }
-        if (terminals[projectTerminalKey]) {
-            delete terminals[projectTerminalKey];
-        }
-        // Wait for build.sh to restart frontends
-        await new Promise((resolve) => setTimeout(resolve, 12000));
-        // Open new terminals showing the log files
-        const authFrontendPath = path.join(parentDir, "Auth", "frontend");
-        const projectFrontendPath = path.join(projectPath, "frontend");
-        // Log files are in project root, not frontend folder
-        const authLogPath = path.join(parentDir, "Auth", "auth-frontend.log");
-        const projectLogPath = path.join(projectPath, "frontend.log");
-        // Create Auth terminal
-        if (fs.existsSync(authFrontendPath)) {
-            const authTerminal = vscode.window.createTerminal({
-                name: `🔐 Auth Frontend (Port 3000)`,
-                cwd: authFrontendPath,
-            });
-            terminals[authTerminalKey] = authTerminal;
-            authTerminal.show(false);
-            // Show log output after a small delay
-            setTimeout(() => {
-                if (fs.existsSync(authLogPath)) {
-                    authTerminal.sendText(`clear && echo "📋 Auth Frontend Log (Port 3000)" && tail -f "${authLogPath}"`);
-                }
-                else {
-                    authTerminal.sendText(`echo "🔐 Auth Frontend running on port 3000" && echo "Log file: ${authLogPath}"`);
-                }
-            }, 500);
-        }
-        // Create Project terminal
-        if (fs.existsSync(projectFrontendPath)) {
-            const projectTerminal = vscode.window.createTerminal({
-                name: `📦 ${projectName} Frontend (Port 3001)`,
-                cwd: projectFrontendPath,
-            });
-            terminals[projectTerminalKey] = projectTerminal;
-            projectTerminal.show(true);
-            // Show log output after a small delay
-            setTimeout(() => {
-                if (fs.existsSync(projectLogPath)) {
-                    projectTerminal.sendText(`clear && echo "📋 ${projectName} Frontend Log (Port 3001)" && tail -f "${projectLogPath}"`);
-                }
-                else {
-                    projectTerminal.sendText(`echo "📦 ${projectName} Frontend running on port 3001" && echo "Log file: ${projectLogPath}"`);
-                }
-            }, 500);
-        }
-        // Mark ALL frontend servers as "running" since build.sh has restarted them
-        const allServersAfter = configManager.getServers();
-        const frontendServersAfter = allServersAfter.filter((s) => s.type === "frontend");
-        frontendServersAfter.forEach((server) => {
-            serverProvider.updateServerStatus(server.id, "running");
-        });
-        vscode.window.showInformationMessage(`✅ ${projectName} ${environment.toUpperCase()} build completed! Frontends restarted on ports 3000 & 3001`);
-    });
-}
-// Find build.sh in specific project path
-async function findBuildScriptInProject(projectPath) {
-    // Check common locations within the project
-    const commonPaths = [
-        path.join(projectPath, "build.sh"),
-        path.join(projectPath, "backend", "build.sh"),
-    ];
-    for (const scriptPath of commonPaths) {
-        if (fs.existsSync(scriptPath)) {
-            console.log(`✅ Found build.sh at: ${scriptPath}`);
-            return scriptPath;
-        }
-    }
-    // Search recursively within the project path
-    try {
-        const projectName = path.basename(projectPath);
-        const files = await vscode.workspace.findFiles(`**/${projectName}/**/build.sh`, "**/node_modules/**", 1);
-        if (files.length > 0) {
-            console.log(`✅ Found build.sh at: ${files[0].fsPath}`);
-            return files[0].fsPath;
-        }
-    }
-    catch (error) {
-        console.error("Error searching for build.sh:", error);
-    }
-    return null;
-}
-// Find application.properties file in workspace
-async function findApplicationProperties(searchRoot) {
-    const commonPaths = [
-        "backend/src/main/resources/application.properties",
-        "src/main/resources/application.properties",
-        "application.properties",
-    ];
-    for (const relativePath of commonPaths) {
-        const fullPath = path.join(searchRoot, relativePath);
-        if (fs.existsSync(fullPath)) {
-            console.log(`✅ Found application.properties at: ${fullPath}`);
-            return fullPath;
-        }
-    }
-    // If not found in common paths, search recursively in the workspace
-    try {
-        const files = await vscode.workspace.findFiles("**/application.properties", "**/node_modules/**", 1);
-        if (files.length > 0) {
-            console.log(`✅ Found application.properties at: ${files[0].fsPath}`);
-            return files[0].fsPath;
-        }
-    }
-    catch (error) {
-        console.error("Error searching for application.properties:", error);
-    }
-    return null;
-}
-// Restart the matching frontend server for the backend being built
-async function restartMatchingFrontendServer(buildDir) {
-    const frontendServers = configManager.getServersByCategory("Frontend Servers");
-    // Try to find the frontend that matches this backend
-    // buildDir is like: /path/to/NEXTGEN-OCBIS/Publication
-    // We want to find frontend in: /path/to/NEXTGEN-OCBIS/Publication/frontend
-    const projectRoot = buildDir; // This is already the Publication folder
-    for (const server of frontendServers) {
-        // Check if frontend server is in the same project (e.g., Publication/frontend)
-        const serverDir = server.workingDirectory;
-        // If frontend's working directory contains the project root path, it's a match
-        if (serverDir.includes(projectRoot) &&
-            serverProvider.isServerRunning(server.id)) {
-            console.log(`🔄 Restarting matching frontend server: ${server.name} at ${serverDir}`);
-            // Stop the running frontend server first
-            await stopServer(server.id);
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            // Use build.sh to rebuild and restart the frontend with dev environment
-            const buildScriptPath = path.join(projectRoot, "build.sh");
-            if (fs.existsSync(buildScriptPath)) {
-                console.log(`🚀 Running ./build.sh dev to rebuild frontend at ${projectRoot}`);
-                // Create a new terminal for the dev build
-                const buildTerminal = vscode.window.createTerminal({
-                    name: `🔄 Frontend Rebuild: ${server.name}`,
-                    cwd: projectRoot,
-                });
-                buildTerminal.show();
-                buildTerminal.sendText(`./build.sh dev`);
-                vscode.window.showInformationMessage(`🔄 Rebuilding and restarting frontend: ${server.name}`);
-            }
-            else {
-                console.log(`⚠️ build.sh not found, using standard restart`);
-                // Fallback to normal restart
-                startServer(server.name, server.command, server.id);
-                vscode.window.showInformationMessage(`🔄 Restarted frontend: ${server.name}`);
-            }
-            return;
-        }
-    }
-    console.log(`⚠️ No matching frontend server found for project at ${buildDir}`);
-}
-// Automatically patch build.sh with completion marker
-async function patchBuildScript(buildScriptPath) {
-    try {
-        // Read user's current build.sh
-        let content = fs.readFileSync(buildScriptPath, "utf8");
-        // Check if already patched
-        if (content.includes("IS_WINDOWS=false") &&
-            content.includes("NINJA_BUILD_COMPLETE")) {
-            vscode.window.showInformationMessage("✅ build.sh is already patched!");
-            console.log("build.sh already has all patches");
-            return;
-        }
-        // Copy the template file directly from extension
-        const templatePath = path.join(extensionContext.extensionPath, "build.sh");
-        if (fs.existsSync(templatePath)) {
-            const templateContent = fs.readFileSync(templatePath, "utf8");
-            fs.writeFileSync(buildScriptPath, templateContent, "utf8");
-            // Make executable
-            fs.chmodSync(buildScriptPath, "755");
-            vscode.window.showInformationMessage("✅ build.sh patched successfully! All automation features added.");
-            console.log(`✅ Copied template build.sh to: ${buildScriptPath}`);
-        }
-        else {
-            vscode.window.showErrorMessage("❌ Template build.sh not found in extension");
-        }
-    }
-    catch (error) {
-        console.error("Error patching build.sh:", error);
-        throw error;
-    }
-}
-// Check for extension updates and notify user
+// Check for extension updates, notify user, and auto-replace managed build.sh files
 async function checkForUpdates(context) {
-    // Check if we've already notified about this version
     const lastNotifiedVersion = context.globalState.get("lastNotifiedVersion", "0.0.0");
     try {
-        // Read the current version from package.json
         const packageJsonPath = path.join(context.extensionPath, "package.json");
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
         const installedVersion = packageJson.version;
         const extensionName = packageJson.displayName || packageJson.name;
-        console.log(`🔍 Current version: ${installedVersion}`);
-        console.log(`📦 Extension: ${extensionName}`);
-        // Show update notification if this is a first run after update
-        if (installedVersion !== lastNotifiedVersion &&
-            lastNotifiedVersion !== "0.0.0") {
-            const action = await vscode.window.showInformationMessage(`🎉 ${extensionName} has been updated to v${installedVersion}! Check out the new features.`, "View Changelog", "What's New", "Dismiss");
+        const isUpdate = installedVersion !== lastNotifiedVersion && lastNotifiedVersion !== "0.0.0";
+        const isFirstRun = lastNotifiedVersion === "0.0.0";
+        // ── Auto-replace managed build.sh files on every version change ──────────
+        if (isUpdate || isFirstRun) {
+            await autoReplaceBuildScripts(context, installedVersion);
+        }
+        // ── Show update notification ──────────────────────────────────────────────
+        if (isUpdate) {
+            const action = await vscode.window.showInformationMessage(`${extensionName} updated to v${installedVersion}.`, "View Changelog", "Dismiss");
             if (action === "View Changelog") {
-                const changelogPath = path.join(context.extensionPath, "CHANGELOG.md");
-                const changelogUri = vscode.Uri.file(changelogPath);
+                const changelogUri = vscode.Uri.file(path.join(context.extensionPath, "CHANGELOG.md"));
                 await vscode.commands.executeCommand("vscode.open", changelogUri);
             }
-            else if (action === "What's New") {
-                vscode.window.showInformationMessage("Latest improvements: Windows path fix for cd commands, better cross-platform compatibility!");
-            }
         }
-        // Update the last notified version
         await context.globalState.update("lastNotifiedVersion", installedVersion);
-        // Show welcome message for new users (less intrusive)
-        if (lastNotifiedVersion === "0.0.0") {
-            // Only show a subtle notification, not a popup
-            console.log("🥷 Welcome to Ninja Runner! New user detected.");
-            // Show a less intrusive message after a delay, and only if no servers are configured
+        // ── Welcome message for new users ─────────────────────────────────────────
+        if (isFirstRun) {
             setTimeout(() => {
-                const servers = configManager.getServers();
-                if (servers.length === 0) {
+                if (configManager.getServers().length === 0) {
                     vscode.window
-                        .showInformationMessage("🥷 Welcome to Ninja Runner! Auto-detecting your projects...", "Open Ninja Runner")
-                        .then((selection) => {
-                        if (selection === "Open Ninja Runner") {
+                        .showInformationMessage("Welcome to Ninja Runner! Auto-detecting your projects...", "Open Ninja Runner")
+                        .then((sel) => {
+                        if (sel === "Open Ninja Runner") {
                             vscode.commands.executeCommand("serverRunner.showView");
                         }
                     });
@@ -2164,15 +2002,66 @@ async function checkForUpdates(context) {
         console.error("Error checking for updates:", error);
     }
 }
-// Helper function to prompt users to reload VS Code after marketplace update
-function showReloadPrompt() {
-    vscode.window
-        .showInformationMessage("🔄 Ninja Runner has been updated! Please reload VS Code to use the latest features.", "Reload Now", "Later")
-        .then((selection) => {
-        if (selection === "Reload Now") {
-            vscode.commands.executeCommand("workbench.action.reloadWindow");
+// Auto-replace every build.sh in the workspace that was installed by this
+// extension (identified by the # NINJA_RUNNER_VERSION= header line).
+// Files without that marker prompt the user before being replaced.
+async function autoReplaceBuildScripts(context, newVersion) {
+    const templatePath = path.join(context.extensionPath, "build.sh");
+    if (!fs.existsSync(templatePath)) {
+        return;
+    }
+    const templateContent = fs.readFileSync(templatePath, "utf8");
+    // Find every build.sh in the workspace (skip node_modules / target / dist)
+    let files = [];
+    try {
+        files = await vscode.workspace.findFiles("**/build.sh", "{**/node_modules/**,**/target/**,**/dist/**,**/built/**}");
+    }
+    catch {
+        return;
+    }
+    let replaced = 0;
+    for (const file of files) {
+        try {
+            const content = fs.readFileSync(file.fsPath, "utf8");
+            if (content.includes("# NINJA_RUNNER_VERSION=")) {
+                // Managed file — check version and auto-replace if outdated
+                const match = content.match(/^# NINJA_RUNNER_VERSION=(.+)$/m);
+                const fileVersion = match ? match[1].trim() : "";
+                if (fileVersion === newVersion) {
+                    continue; // already up to date
+                }
+                fs.writeFileSync(file.fsPath, templateContent, "utf8");
+                try {
+                    fs.chmodSync(file.fsPath, "755");
+                }
+                catch { /* Windows */ }
+                replaced++;
+                console.log(`[Ninja Runner] Updated build.sh at ${file.fsPath} (${fileVersion} → ${newVersion})`);
+            }
+            else {
+                // Unmanaged file — ask the user before touching it
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+                const relativePath = path.relative(workspaceRoot, file.fsPath);
+                const answer = await vscode.window.showInformationMessage(`Ninja Runner: A build.sh already exists at "${relativePath}". Replace it with the Ninja Runner managed version?`, { modal: true }, "Replace", "Skip");
+                if (answer !== "Replace") {
+                    continue;
+                }
+                fs.writeFileSync(file.fsPath, templateContent, "utf8");
+                try {
+                    fs.chmodSync(file.fsPath, "755");
+                }
+                catch { /* Windows */ }
+                replaced++;
+                console.log(`[Ninja Runner] Replaced unmanaged build.sh at ${file.fsPath} with v${newVersion}`);
+            }
         }
-    });
+        catch (err) {
+            console.error(`[Ninja Runner] Failed to update ${file.fsPath}:`, err);
+        }
+    }
+    if (replaced > 0) {
+        vscode.window.showInformationMessage(`Ninja Runner: updated ${replaced} build.sh file${replaced > 1 ? "s" : ""} to v${newVersion}.`);
+    }
 }
 function deactivate() {
     // Stop all debug sessions

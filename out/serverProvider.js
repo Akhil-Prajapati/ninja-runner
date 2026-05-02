@@ -23,16 +23,86 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ServerItem = exports.ServerRunnerProvider = void 0;
+exports.BuildItem = exports.ServerItem = exports.ServerRunnerProvider = exports.ServerDecorationProvider = exports.makeServerUri = exports.NINJA_RUNNER_SCHEME = void 0;
 const vscode = __importStar(require("vscode"));
-const path = __importStar(require("path"));
 const serverConfig_1 = require("./serverConfig");
-class ServerRunnerProvider {
+// ── Color tokens (VS Code ≥ 1.58) ────────────────────────────────────────────
+const COLOR_RUNNING = new vscode.ThemeColor("testing.iconPassed"); // green
+const COLOR_STARTING = new vscode.ThemeColor("editorWarning.foreground"); // yellow/orange
+const COLOR_RESTARTING = new vscode.ThemeColor("editorInfo.foreground"); // blue
+const COLOR_ERROR = new vscode.ThemeColor("testing.iconFailed"); // red
+const COLOR_STOPPED = new vscode.ThemeColor("disabledForeground"); // muted grey
+// ── URI scheme used for FileDecoration (colors the label text row) ───────────
+exports.NINJA_RUNNER_SCHEME = "ninja-runner";
+function makeServerUri(serverId) {
+    // encode serverId in the path so the decoration provider can retrieve it
+    return vscode.Uri.parse(`${exports.NINJA_RUNNER_SCHEME}:///${encodeURIComponent(serverId)}`);
+}
+exports.makeServerUri = makeServerUri;
+// ── FileDecorationProvider — tints the entire tree-item row ──────────────────
+//
+//  VS Code calls provideFileDecoration() for every tree item that has
+//  resourceUri set.  We return a ThemeColor that tints the label text,
+//  making the running/stopped/error state immediately obvious even when
+//  the icon is small.
+//
+class ServerDecorationProvider {
     constructor() {
+        this._onDidChange = new vscode.EventEmitter();
+        this.onDidChangeFileDecorations = this._onDidChange.event;
+        this.statusMap = {};
+    }
+    /** Called by ServerRunnerProvider whenever a server's status changes. */
+    update(serverId, status) {
+        this.statusMap[serverId] = status;
+        this._onDidChange.fire(makeServerUri(serverId));
+    }
+    provideFileDecoration(uri) {
+        if (uri.scheme !== exports.NINJA_RUNNER_SCHEME) {
+            return undefined;
+        }
+        const serverId = decodeURIComponent(uri.path.slice(1)); // strip leading "/"
+        const status = this.statusMap[serverId] ?? "stopped";
+        switch (status) {
+            case "running":
+                return {
+                    color: COLOR_RUNNING,
+                    tooltip: "Running",
+                };
+            case "starting":
+                return {
+                    color: COLOR_STARTING,
+                    badge: "…",
+                    tooltip: "Starting",
+                };
+            case "restarting":
+                return {
+                    color: COLOR_RESTARTING,
+                    badge: "↺",
+                    tooltip: "Restarting",
+                };
+            case "error":
+                return {
+                    color: COLOR_ERROR,
+                    badge: "!",
+                    tooltip: "Error — click to retry",
+                };
+            case "stopped":
+            default:
+                return undefined; // default label colour = stopped (no decoration)
+        }
+    }
+}
+exports.ServerDecorationProvider = ServerDecorationProvider;
+// ── Tree data provider ────────────────────────────────────────────────────────
+class ServerRunnerProvider {
+    constructor(decorations) {
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.serverStatus = {};
+        this.buildStatus = {};
         this.configManager = serverConfig_1.ServerConfigManager.getInstance();
+        this.decorations = decorations;
         this.initializeServerStatus();
     }
     initializeServerStatus() {
@@ -46,198 +116,166 @@ class ServerRunnerProvider {
     }
     updateServerStatus(serverKey, status) {
         this.serverStatus[serverKey] = status;
+        this.decorations.update(serverKey, status); // update label colour
         this.refresh();
     }
     getServerStatus(serverKey) {
-        return this.serverStatus[serverKey] || "stopped";
+        return this.serverStatus[serverKey] ?? "stopped";
     }
     isServerRunning(serverKey) {
         return this.serverStatus[serverKey] === "running";
     }
-    getProjectsWithBuildScript() {
-        const servers = this.configManager.getServers();
-        const projects = new Map();
-        // Get workspace folder for resolving relative paths
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        const workspaceRoot = workspaceFolders && workspaceFolders.length > 0
-            ? workspaceFolders[0].uri.fsPath
-            : "";
-        // Group servers by their parent project directory
-        servers.forEach((server) => {
-            let workingDir = server.workingDirectory;
-            // If path is relative, resolve it from workspace root
-            if (!path.isAbsolute(workingDir) && workspaceRoot) {
-                workingDir = path.join(workspaceRoot, workingDir);
-            }
-            // Ensure we have an absolute path
-            workingDir = path.resolve(workingDir);
-            // Try to find the project root (parent of backend/frontend)
-            const parts = workingDir.split(/[\/\\]/);
-            // Look for common project patterns
-            let projectRoot = "";
-            let projectName = "";
-            // Check if path contains backend or frontend
-            const backendIndex = parts.findIndex((p) => p === "backend");
-            const frontendIndex = parts.findIndex((p) => p === "frontend");
-            if (backendIndex > 0) {
-                // Project root is parent of backend folder
-                projectRoot = parts.slice(0, backendIndex).join("/");
-                projectName = parts[backendIndex - 1];
-            }
-            else if (frontendIndex > 0) {
-                // Project root is parent of frontend folder
-                projectRoot = parts.slice(0, frontendIndex).join("/");
-                projectName = parts[frontendIndex - 1];
-            }
-            // Ensure projectRoot is absolute
-            if (projectRoot && !projectRoot.startsWith("/")) {
-                projectRoot = "/" + projectRoot;
-            }
-            if (projectRoot && projectName && !projects.has(projectName)) {
-                projects.set(projectName, projectRoot);
-            }
-        });
-        const result = Array.from(projects.entries()).map(([name, projectPath]) => ({
-            name,
-            path: projectPath,
-        }));
-        return result;
+    updateBuildStatus(projectPath, status) {
+        this.buildStatus[projectPath] = status;
+        this.refresh();
+    }
+    getBuildStatus(projectPath) {
+        return this.buildStatus[projectPath] ?? "idle";
     }
     getTreeItem(element) {
         return element;
     }
     getChildren(element) {
         if (!element) {
-            // Root items
             return Promise.resolve([
-                new ServerItem("⚡ Frontend Servers", vscode.TreeItemCollapsibleState.Expanded, "folder", undefined),
-                new ServerItem("🥷 Backend Servers", vscode.TreeItemCollapsibleState.Expanded, "folder", undefined),
-                new ServerItem("🏗️ Build Manager", vscode.TreeItemCollapsibleState.Expanded, "buildManager", undefined),
+                new ServerItem("Frontend Servers", vscode.TreeItemCollapsibleState.Expanded, "folder", "folder-frontend"),
+                new ServerItem("Backend Servers", vscode.TreeItemCollapsibleState.Expanded, "folder", "folder-backend"),
+                new ServerItem("Build Manager", vscode.TreeItemCollapsibleState.Expanded, "folder", "folder-build"),
             ]);
         }
-        if (element.label === "⚡ Frontend Servers") {
-            const frontendServers = this.configManager.getServersByCategory("Frontend Servers");
-            return Promise.resolve(frontendServers.map((server) => new ServerItem(`🅵 ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", `${server.id}:frontend`, this.getServerStatus(server.id))));
+        const ctx = element.contextValue;
+        if (ctx === "folder-frontend") {
+            const servers = this.configManager.getServersByCategory("Frontend Servers");
+            return Promise.resolve(servers.map((s) => new ServerItem(s.name, vscode.TreeItemCollapsibleState.None, "server", `${s.id}:frontend`, this.getServerStatus(s.id))));
         }
-        if (element.label === "🥷 Backend Servers") {
-            const backendServers = this.configManager.getServersByCategory("Backend Servers");
-            return Promise.resolve(backendServers.map((server) => new ServerItem(`🅱️ ${server.name}`, vscode.TreeItemCollapsibleState.None, "server", `${server.id}:backend`, this.getServerStatus(server.id))));
+        if (ctx === "folder-backend") {
+            const servers = this.configManager.getServersByCategory("Backend Servers");
+            return Promise.resolve(servers.map((s) => new ServerItem(s.name, vscode.TreeItemCollapsibleState.None, "server", `${s.id}:backend`, this.getServerStatus(s.id))));
         }
-        if (element.label === "🏗️ Build Manager") {
-            // Get all unique projects that have build.sh
-            const buildProjects = this.getProjectsWithBuildScript();
-            const projectFolders = [];
-            buildProjects.forEach((project) => {
-                projectFolders.push(new ServerItem(`🏗️ ${project.name}`, vscode.TreeItemCollapsibleState.Collapsed, "buildFolder", `buildFolder:${project.path}`, undefined, project.path));
-            });
-            return Promise.resolve(projectFolders);
-        }
-        // Check if this is a build folder being expanded
-        if (element.itemType === "buildFolder" && element.projectPath) {
-            const projectName = element.label?.replace("🏗️ ", "") || "Project";
-            return Promise.resolve([
-                new ServerItem(`🟡 Staging Build`, vscode.TreeItemCollapsibleState.None, "build", `build:staging:${element.projectPath}`, undefined, undefined, projectName),
-                new ServerItem(`🟠 Beta Build`, vscode.TreeItemCollapsibleState.None, "build", `build:beta:${element.projectPath}`, undefined, undefined, projectName),
-                new ServerItem(`🔴 Production Build`, vscode.TreeItemCollapsibleState.None, "build", `build:prod:${element.projectPath}`, undefined, undefined, projectName),
-            ]);
+        if (ctx === "folder-build") {
+            return this.scanBuildProjects();
         }
         return Promise.resolve([]);
     }
+    async scanBuildProjects() {
+        // Only show projects whose servers are already configured
+        // (same set the user selected during auto-detect).
+        // workingDirectory is like "Auth/frontend" or "Auth/backend" —
+        // take the first path segment as the project name.
+        const servers = this.configManager.getServers();
+        const seen = new Set();
+        const items = [];
+        for (const server of servers) {
+            // Normalise separators so it works on Windows too
+            const parts = server.workingDirectory.replace(/\\/g, "/").split("/");
+            if (parts.length < 2) {
+                continue;
+            } // skip top-level entries
+            const projectName = parts[0];
+            if (seen.has(projectName)) {
+                continue;
+            }
+            seen.add(projectName);
+            items.push(new BuildItem(projectName, projectName, this.buildStatus[projectName] ?? "idle"));
+        }
+        return items;
+    }
 }
 exports.ServerRunnerProvider = ServerRunnerProvider;
+// ── Tree item ─────────────────────────────────────────────────────────────────
 class ServerItem extends vscode.TreeItem {
-    constructor(label, collapsibleState, itemType, contextValue, status, projectPath, projectName) {
+    constructor(label, collapsibleState, itemType, contextValue, status) {
         super(label, collapsibleState);
         this.label = label;
         this.collapsibleState = collapsibleState;
         this.itemType = itemType;
         this.contextValue = contextValue;
         this.status = status;
-        this.projectPath = projectPath;
-        this.projectName = projectName;
         this.tooltip = this.label;
         if (itemType === "folder") {
-            this.iconPath = new vscode.ThemeIcon("folder");
-        }
-        else if (itemType === "buildManager") {
-            // Build Manager root with distinct icon
-            this.iconPath = new vscode.ThemeIcon("tools");
-        }
-        else if (itemType === "buildFolder") {
-            // Project folders in Build Manager - use package icon to differentiate from regular folders
-            this.iconPath = new vscode.ThemeIcon("briefcase");
-            this.description = "Build Environments";
-        }
-        else if (itemType === "build") {
-            // Build buttons with distinct colored icons
-            const envMatch = label.match(/(Staging|Beta|Production)/);
-            const environment = envMatch ? envMatch[1] : "";
-            // Different icons with descriptions for each environment
-            if (environment === "Staging") {
-                this.iconPath = new vscode.ThemeIcon("beaker");
-                this.description = `🟡 Test Environment`;
+            if (contextValue === "folder-frontend") {
+                this.iconPath = new vscode.ThemeIcon("browser", new vscode.ThemeColor("charts.blue"));
             }
-            else if (environment === "Beta") {
-                this.iconPath = new vscode.ThemeIcon("package");
-                this.description = `🟠 Pre-Release`;
+            else if (contextValue === "folder-build") {
+                this.iconPath = new vscode.ThemeIcon("package", new vscode.ThemeColor("charts.purple"));
             }
-            else if (environment === "Production") {
-                this.iconPath = new vscode.ThemeIcon("rocket");
-                this.description = `🔴 Live Deploy`;
-            }
-            // Set up single-click command for build buttons
-            if (contextValue) {
-                this.command = {
-                    command: "serverRunner.triggerBuild",
-                    title: `Trigger ${label}`,
-                    arguments: [contextValue],
-                };
+            else {
+                this.iconPath = new vscode.ThemeIcon("server", new vscode.ThemeColor("charts.orange"));
             }
         }
         else {
-            // Dynamic icon based on server status
+            // ── coloured icon reflects status ──────────────────────────────────────
             switch (status) {
                 case "running":
-                    this.iconPath = new vscode.ThemeIcon("circle-filled");
-                    this.description = "🟢 Running";
+                    this.iconPath = new vscode.ThemeIcon("pass-filled", COLOR_RUNNING);
+                    this.description = "Running";
                     break;
                 case "starting":
-                    this.iconPath = new vscode.ThemeIcon("loading~spin");
-                    this.description = "🟡 Starting";
+                    this.iconPath = new vscode.ThemeIcon("loading~spin", COLOR_STARTING);
+                    this.description = "Starting…";
                     break;
                 case "restarting":
-                    this.iconPath = new vscode.ThemeIcon("sync~spin");
-                    this.description = "🔄 Restarting";
+                    this.iconPath = new vscode.ThemeIcon("sync~spin", COLOR_RESTARTING);
+                    this.description = "Restarting…";
                     break;
                 case "error":
-                    this.iconPath = new vscode.ThemeIcon("error");
-                    this.description = "🔴 Error";
+                    this.iconPath = new vscode.ThemeIcon("error", COLOR_ERROR);
+                    this.description = "Error — click to retry";
                     break;
                 case "stopped":
                 default:
-                    this.iconPath = new vscode.ThemeIcon("circle-outline");
-                    this.description = "🔴 Stopped";
+                    this.iconPath = new vscode.ThemeIcon("circle-outline", COLOR_STOPPED);
+                    this.description = "Stopped";
                     break;
             }
-            // Set up single-click command for dynamic servers based on status
+            // ── resourceUri enables the FileDecoration (row colour) ───────────────
             if (contextValue) {
-                if (status === "error") {
-                    this.command = {
-                        command: "serverRunner.retryServer",
-                        title: `Retry ${label}`,
-                        arguments: [contextValue],
-                    };
-                }
-                else {
-                    this.command = {
-                        command: "serverRunner.startDynamicServer",
-                        title: `Start ${label}`,
-                        arguments: [contextValue],
-                    };
-                }
+                const serverId = contextValue.split(":")[0];
+                this.resourceUri = makeServerUri(serverId);
+            }
+            // ── single-click command ───────────────────────────────────────────────
+            if (contextValue) {
+                this.command = {
+                    command: status === "error"
+                        ? "serverRunner.retryServer"
+                        : "serverRunner.startDynamicServer",
+                    title: status === "error" ? `Retry ${label}` : `Start ${label}`,
+                    arguments: [contextValue],
+                };
             }
         }
     }
 }
 exports.ServerItem = ServerItem;
+// ── Build item ────────────────────────────────────────────────────────────────
+class BuildItem extends vscode.TreeItem {
+    constructor(label, projectPath, // relative path from workspace root
+    buildStatus = "idle") {
+        super(label, vscode.TreeItemCollapsibleState.None);
+        this.label = label;
+        this.projectPath = projectPath;
+        this.buildStatus = buildStatus;
+        this.contextValue = "build-project";
+        this.tooltip = `${label} — Build staging + prod`;
+        switch (buildStatus) {
+            case "building":
+                this.iconPath = new vscode.ThemeIcon("loading~spin", new vscode.ThemeColor("editorWarning.foreground"));
+                this.description = "Building…";
+                break;
+            case "done":
+                this.iconPath = new vscode.ThemeIcon("pass-filled", new vscode.ThemeColor("testing.iconPassed"));
+                this.description = "Built ✓";
+                break;
+            case "error":
+                this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("testing.iconFailed"));
+                this.description = "Build failed";
+                break;
+            default: // idle
+                this.iconPath = new vscode.ThemeIcon("repo", new vscode.ThemeColor("charts.blue"));
+                this.description = projectPath;
+                break;
+        }
+    }
+}
+exports.BuildItem = BuildItem;
 //# sourceMappingURL=serverProvider.js.map

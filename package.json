@@ -1,12 +1,12 @@
 {
   "name": "ninja-runner",
-  "displayName": "🥷 Ninja Runner",
-  "description": "⚡ Universal development server runner - Auto-detect and run any frontend/backend projects",
-  "version": "0.1.5",
+  "displayName": "Ninja Runner",
+  "description": "Universal development server runner - Auto-detect and run any frontend/backend projects",
+  "version": "0.1.7",
   "publisher": "akhilninja",
   "icon": "ninja-server-icon.png",
   "engines": {
-    "vscode": "^1.50.0"
+    "vscode": "^1.58.0"
   },
   "categories": [
     "Other"
@@ -43,7 +43,7 @@
       "serverRunner": [
         {
           "id": "serverRunnerView",
-          "name": "🥷 Ninja Runner",
+          "name": "Ninja Runner",
           "when": "serverRunnerEnabled"
         }
       ]
@@ -52,8 +52,8 @@
       "activitybar": [
         {
           "id": "serverRunner",
-          "title": "🥷 Ninja Runner",
-          "icon": "$(combine)"
+          "title": "Ninja Runner",
+          "icon": "$(server-process)"
         }
       ]
     },
@@ -61,7 +61,7 @@
       {
         "command": "serverRunner.showView",
         "title": "Show Ninja Runner",
-        "icon": "$(combine)"
+        "icon": "$(server-process)"
       },
       {
         "command": "serverRunnerView.focus",
@@ -70,42 +70,42 @@
       },
       {
         "command": "serverRunner.autoDetectProjects",
-        "title": "🔍 Auto-Detect Projects",
+        "title": "Auto-Detect Projects",
         "icon": "$(search)"
       },
       {
         "command": "serverRunner.setupProjects",
-        "title": "⚙️ Setup Projects",
+        "title": "Setup Projects",
         "icon": "$(gear)"
       },
       {
         "command": "serverRunner.resetConfiguration",
-        "title": "🔄 Reset & Reconfigure",
+        "title": "Reset & Reconfigure",
         "icon": "$(refresh)"
       },
       {
         "command": "serverRunner.clearAllSelections",
-        "title": "🗑️ Clear All Selections",
+        "title": "Clear All Selections",
         "icon": "$(trash)"
       },
       {
         "command": "serverRunner.installDependencies",
-        "title": "📦 Install Dependencies",
+        "title": "Install Dependencies",
         "icon": "$(package)"
       },
       {
         "command": "serverRunner.installAllDependencies",
-        "title": "📦 Download All Dependencies",
+        "title": "Download All Dependencies",
         "icon": "$(cloud-download)"
       },
       {
         "command": "serverRunner.stopAllServers",
-        "title": "🛑 Stop All Servers",
+        "title": "Stop All Servers",
         "icon": "$(stop)"
       },
       {
         "command": "serverRunner.startAllServers",
-        "title": "🚀 Start All Servers",
+        "title": "Start All Servers",
         "icon": "$(run-all)"
       },
       {
@@ -115,62 +115,67 @@
       },
       {
         "command": "serverRunner.addServer",
-        "title": "➕ Add New Server",
+        "title": "Add New Server",
         "icon": "$(add)"
       },
       {
         "command": "serverRunner.editServer",
-        "title": "✏️ Edit Server",
+        "title": "Edit Server",
         "icon": "$(edit)"
       },
       {
         "command": "serverRunner.startDynamicServer",
-        "title": "▶️ Start Server",
+        "title": "Start Server",
         "icon": "$(play)"
       },
       {
         "command": "serverRunner.retryServer",
-        "title": "🔄 Retry Server",
+        "title": "Retry Server",
         "icon": "$(refresh)"
       },
       {
         "command": "serverRunner.stopServer",
-        "title": "🛑 Stop Server",
+        "title": "Stop Server",
         "icon": "$(stop)"
       },
       {
         "command": "serverRunner.checkForUpdates",
-        "title": "🔄 Check for Updates",
+        "title": "Check for Updates",
         "icon": "$(sync)"
       },
       {
         "command": "serverRunner.runInDebug",
-        "title": "🐛 Run in Debug",
+        "title": "Run in Debug",
         "icon": "$(debug-alt)"
       },
       {
-        "command": "serverRunner.triggerBuild",
-        "title": "🏗️ Trigger Build",
+        "command": "serverRunner.buildProject",
+        "title": "Build Both (Staging + Prod)",
+        "icon": "$(layers)"
+      },
+      {
+        "command": "serverRunner.buildProjectStaging",
+        "title": "Build Staging",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "serverRunner.buildProjectProd",
+        "title": "Build Prod",
         "icon": "$(rocket)"
       },
       {
-        "command": "serverRunner.patchBuildScript",
-        "title": "🔧 Patch build.sh",
-        "icon": "$(wrench)"
-      },
-      {
         "command": "serverRunner.showStatusBar",
-        "title": "📊 Show Status Bar",
+        "title": "Show Status Bar",
         "icon": "$(dashboard)"
       },
       {
         "command": "serverRunner.nextServer",
-        "title": "⏭️ Next Server",
+        "title": "Next Server",
         "icon": "$(arrow-right)"
       },
       {
         "command": "serverRunner.previousServer",
-        "title": "⏮️ Previous Server",
+        "title": "Previous Server",
         "icon": "$(arrow-left)"
       }
     ],
@@ -219,19 +224,49 @@
       ],
       "view/item/context": [
         {
-          "command": "serverRunner.stopServer",
+          "command": "serverRunner.startDynamicServer",
           "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
           "group": "inline@1"
         },
         {
-          "command": "serverRunner.runInDebug",
-          "when": "view == serverRunnerView && viewItem =~ /backend/",
+          "command": "serverRunner.stopServer",
+          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
           "group": "inline@2"
         },
         {
-          "command": "serverRunner.patchBuildScript",
-          "when": "view == serverRunnerView && viewItem =~ /buildFolder/",
+          "command": "serverRunner.installDependencies",
+          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
+          "group": "inline@3"
+        },
+        {
+          "command": "serverRunner.runInDebug",
+          "when": "view == serverRunnerView && viewItem =~ /backend/",
+          "group": "inline@4"
+        },
+        {
+          "command": "serverRunner.buildProjectStaging",
+          "when": "view == serverRunnerView && viewItem == build-project",
           "group": "inline@1"
+        },
+        {
+          "command": "serverRunner.buildProjectProd",
+          "when": "view == serverRunnerView && viewItem == build-project",
+          "group": "inline@2"
+        },
+        {
+          "command": "serverRunner.buildProject",
+          "when": "view == serverRunnerView && viewItem == build-project",
+          "group": "inline@3"
+        },
+        {
+          "command": "serverRunner.installDependencies",
+          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
+          "group": "server@1"
+        },
+        {
+          "command": "serverRunner.editServer",
+          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
+          "group": "server@2"
         }
       ],
       "commandPalette": [
@@ -253,12 +288,15 @@
   },
   "devDependencies": {
     "@types/node": "^16.18.126",
-    "@types/vscode": "^1.50.0",
-    "typescript": "^4.9.5"
+    "@types/vscode": "^1.58.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^4.9.5",
+    "undici": "^5.28.5",
+    "vsce": "^2.15.0"
   },
   "author": {
-    "name": "akhilninja",
-    "email": "akhil@example.com"
+    "name": "AkhilNinja",
+    "url": "https://github.com/akhilninja"
   },
   "license": "MIT",
   "galleryBanner": {
