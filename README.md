@@ -1,59 +1,98 @@
-# 🥷 Ninja Runner - Universal Server Manager
+# Ninja Runner - Universal Server Manager
 
-⚡ Universal development server runner - Auto-detect and manage ANY frontend/backend projects with one-click!
+Universal development server runner for VS Code — auto-detect and manage any frontend/backend projects with one click.
 
-## ✨ Features
+## Features
 
-- **🔍 Universal Auto-Detection**: Automatically finds React, Angular, Vue, Spring Boot, Django, and more
-- **🎯 One-Click Project Selection**: Choose your projects once, saved forever
-- **⚡ Smart Folder Scanning**: Handles complex nested structures like `Project/Module/frontend`
-- **🅵🅱️ Visual Indicators**: Clear frontend (🅵) and backend (🅱️) project marking
-- **💾 Workspace Persistence**: Your preferences remembered across VS Code sessions
-- **🚀 Floating Status Bar**: Live server status with start/stop controls
-- **📦 Auto Dependencies**: Automatic npm and Maven dependency installation
-- **🧹 Clean Interface**: Streamlined toolbar design with essential actions only
+- **Universal Auto-Detection**: Automatically finds React, Angular, Vue, Vite, Spring Boot, Express, NestJS, and more
+- **One-Click Server Management**: Start/stop individual or all servers at once
+- **Build Manager**: Build Staging and Production environments (WAR/ZIP packaging via Maven)
+- **Spring Boot Profile Resolution**: Detects `@spring.profiles.active@` Maven placeholder and resolves the real profile from `pom.xml`
+- **Debug Support**: Java (port 5005) and Node.js (port 9229) debug sessions with auto-incrementing ports
+- **Browser Integration**: Open frontend servers directly in browser
+- **Live Status Decorations**: Color-coded file decorations (green/yellow/blue/red/grey) for server states
+- **Status Bar Controls**: Live server count with Start All / Stop All buttons
+- **Daily Developer Quotes**: Rotating daily quote card in the Today panel
+- **Holiday Info**: Fetches Gujarat public holidays and displays them in the Today panel
+- **Workspace Persistence**: Server selections and configurations saved across VS Code sessions
 
-## 🚀 Quick Start
+## Quick Start
 
-1. **Open any workspace** containing frontend/backend projects
-2. **Click the 🥷 ninja icon** in the VS Code activity bar
-3. **Select which projects to run** from the auto-detected list
-4. **Your choices are saved** - next time just click to start all!
-5. **Manage servers** through the clean tree sidebar
+1. Open any workspace containing frontend/backend projects
+2. Click the **Ninja Runner** icon in the VS Code activity bar
+3. Use **Auto-Detect Projects** to scan your workspace
+4. Select which projects to run from the detected list
+5. Click **Start All** or start individual servers from the tree view
 
-## 🎯 Supported Project Types
+## Supported Project Types
 
-**Frontend Projects:**
+**Frontend:**
 
-- ⚛️ React (Create React App, Next.js)
-- 🅰️ Angular (ng serve)
-- 💚 Vue.js (npm run dev)
-- 🔥 Vite projects
-- 📦 Any Node.js project with package.json
+- React / Next.js (port 3000)
+- Angular (port 4200)
+- Vue.js (port 8000)
+- Vite (port 5173)
+- Any Node.js project with `package.json`
 
-**Backend Projects:**
+**Backend:**
 
-- ☕ Spring Boot (Maven)
-- 🟢 Node.js/Express servers
-- 🐍 Python Django (coming soon)
-- 🚀 Any project with start scripts
+- Spring Boot / Maven (`pom.xml`) (port 8080)
+- Express.js
+- NestJS
+- Fastify
+- Koa.js
+- Hapi.js
+- Generic Node.js backends
 
-## 📋 Essential Commands
+## Commands
 
-**Toolbar Actions:**
+**Command Palette** (`Ctrl+Shift+P`):
 
-- **� Auto Detect** - Scan workspace for projects
-- **▶️ Start All** - Launch all selected servers
-- **⏹️ Stop All** - Stop all running servers
-- **⚙️ Reset Config** - Reconfigure project defaults
-- **🔄 Refresh** - Update server status
+| Command                              | Description                               |
+| ------------------------------------ | ----------------------------------------- |
+| `Ninja: Auto-Detect Projects`        | Scan workspace for projects               |
+| `Ninja: Start All Servers`           | Launch all selected servers               |
+| `Ninja: Stop All Servers`            | Stop all running servers                  |
+| `Ninja: Add New Server`              | Add a custom server manually              |
+| `Ninja: Reset & Reconfigure`         | Clear selections and re-run setup         |
+| `Ninja: Install All Dependencies`    | Install npm and Maven dependencies        |
+| `Ninja: Build Staging`               | Run a Maven staging build                 |
+| `Ninja: Build Prod`                  | Run a Maven production build              |
+| `Ninja: Build Both (Staging + Prod)` | Run staging then prod builds sequentially |
+| `Ninja: Run in Debug`                | Start server in debug mode                |
+| `Ninja: Open in Browser`             | Open a running server in the browser      |
+| `Ninja: Check for Updates`           | Check for extension updates               |
 
-**Command Palette:** (`Ctrl+Shift+P`)
+## Build Manager
 
-- `Ninja: Add Server` - Add custom server
-- `Ninja: Install All Dependencies` - Install npm/Maven deps
+The Build Manager supports WAR/ZIP packaging for Spring Boot projects:
 
-## 🛠️ Installation
+- **Staging Build**: Runs `mvn clean package -Pstaging -DskipTests`
+- **Prod Build**: Runs `mvn clean package -Pprod -DskipTests`
+- **Build Both**: Runs staging, then prod sequentially in separate terminals
+- Build status is tracked via `.ninja_build_status` marker files
+- Frontend servers are managed (stopped before build, restarted after)
+
+## Spring Boot Integration
+
+- Detects `pom.xml` for project identification
+- Resolves `@spring.profiles.active@` Maven placeholder to the actual profile defined in `pom.xml`
+- Falls back to `dev` profile if not defined in `pom.xml`
+- Run command: `mvn spring-boot:run -Dspring-boot.run.profiles=<profile>`
+- Extended startup health checks (8 attempts over 16 seconds)
+- Detects port conflicts, DB connection errors, and config failures
+
+## Server States
+
+| State      | Color  | Badge |
+| ---------- | ------ | ----- |
+| Running    | Green  | —     |
+| Starting   | Yellow | `…`   |
+| Restarting | Blue   | `↺`   |
+| Error      | Red    | `!`   |
+| Stopped    | Grey   | —     |
+
+## Installation
 
 Install from VS Code Marketplace:
 
@@ -64,18 +103,10 @@ ext install akhilninja.ninja-runner
 Or install manually:
 
 ```bash
-code --install-extension ninja-runner-0.1.0.vsix
+code --install-extension ninja-runner-0.2.1.vsix
 ```
 
-## 🎯 Perfect For
-
-- **Multi-module projects** like OCBISPhaseTwo/FSP/frontend
-- **Microservices development** with multiple frontend/backend pairs
-- **Team development** with consistent server management
-- **Complex project structures** with nested configurations
-- **Any developer** who wants one-click server management!
-
-## 🔧 Development
+## Development
 
 ```bash
 git clone https://github.com/Akhil-Prajapati/ninja-runner.git
@@ -85,15 +116,15 @@ npm run compile
 npx vsce package
 ```
 
-## 📝 License
+## License
 
-MIT License - Open source and free to use!
+MIT License
 
-## 👨‍💻 Author
+## Author
 
-**Akhil Ninja** - Creating developer productivity tools that make coding faster and more enjoyable!
+**Akhil Ninja** — Building developer productivity tools for faster, smoother coding workflows.
 
-## 🤝 Contributors
+## Contributors
 
 | Contributor          | Contribution                                 |
 | -------------------- | -------------------------------------------- |
@@ -102,4 +133,4 @@ MIT License - Open source and free to use!
 
 ---
 
-_🥷 Happy Coding with Ninja Runner! ⚡_
+_Happy Coding with Ninja Runner!_

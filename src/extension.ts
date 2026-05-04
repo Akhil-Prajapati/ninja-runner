@@ -2771,7 +2771,7 @@ async function addDetectedProject(
       const profileFlag = resolvedProfile
         ? ` -Dspring-boot.run.profiles=${resolvedProfile}`
         : "";
-      command = `cd ${terminalPath} && mvn spring-boot:run -Dspring-boot.run.fork=false${profileFlag}`;
+      command = `cd ${terminalPath} && mvn spring-boot:run${profileFlag}`;
       console.log(
         `🔧 Using enhanced Spring Boot command for ${name}: ${command}`,
       );
