@@ -146,11 +146,11 @@ class ServerRunnerProvider {
         const ctx = element.contextValue;
         if (ctx === "folder-frontend") {
             const servers = this.configManager.getServersByCategory("Frontend Servers");
-            return Promise.resolve(servers.map((s) => new ServerItem(s.name, vscode.TreeItemCollapsibleState.None, "server", `${s.id}:frontend`, this.getServerStatus(s.id))));
+            return Promise.resolve(servers.map((s) => new ServerItem(s.name, vscode.TreeItemCollapsibleState.None, "server", `${s.id}:frontend`, this.getServerStatus(s.id), s.port)));
         }
         if (ctx === "folder-backend") {
             const servers = this.configManager.getServersByCategory("Backend Servers");
-            return Promise.resolve(servers.map((s) => new ServerItem(s.name, vscode.TreeItemCollapsibleState.None, "server", `${s.id}:backend`, this.getServerStatus(s.id))));
+            return Promise.resolve(servers.map((s) => new ServerItem(s.name, vscode.TreeItemCollapsibleState.None, "server", `${s.id}:backend`, this.getServerStatus(s.id), s.port)));
         }
         if (ctx === "folder-build") {
             return this.scanBuildProjects();
@@ -184,13 +184,14 @@ class ServerRunnerProvider {
 exports.ServerRunnerProvider = ServerRunnerProvider;
 // ── Tree item ─────────────────────────────────────────────────────────────────
 class ServerItem extends vscode.TreeItem {
-    constructor(label, collapsibleState, itemType, contextValue, status) {
+    constructor(label, collapsibleState, itemType, contextValue, status, port) {
         super(label, collapsibleState);
         this.label = label;
         this.collapsibleState = collapsibleState;
         this.itemType = itemType;
         this.contextValue = contextValue;
         this.status = status;
+        this.port = port;
         this.tooltip = this.label;
         if (itemType === "folder") {
             if (contextValue === "folder-frontend") {
@@ -205,18 +206,22 @@ class ServerItem extends vscode.TreeItem {
         }
         else {
             // ── coloured icon reflects status ──────────────────────────────────────
+            const portSuffix = port ? ` · :${port}` : "";
             switch (status) {
                 case "running":
                     this.iconPath = new vscode.ThemeIcon("pass-filled", COLOR_RUNNING);
-                    this.description = "Running";
+                    this.description = `Running${portSuffix}`;
+                    this.tooltip = port
+                        ? `${label} — Running on http://localhost:${port}`
+                        : `${label} — Running`;
                     break;
                 case "starting":
                     this.iconPath = new vscode.ThemeIcon("loading~spin", COLOR_STARTING);
-                    this.description = "Starting…";
+                    this.description = `Starting…${portSuffix}`;
                     break;
                 case "restarting":
                     this.iconPath = new vscode.ThemeIcon("sync~spin", COLOR_RESTARTING);
-                    this.description = "Restarting…";
+                    this.description = `Restarting…${portSuffix}`;
                     break;
                 case "error":
                     this.iconPath = new vscode.ThemeIcon("error", COLOR_ERROR);
@@ -225,7 +230,7 @@ class ServerItem extends vscode.TreeItem {
                 case "stopped":
                 default:
                     this.iconPath = new vscode.ThemeIcon("circle-outline", COLOR_STOPPED);
-                    this.description = "Stopped";
+                    this.description = port ? `Stopped · :${port}` : "Stopped";
                     break;
             }
             // ── resourceUri enables the FileDecoration (row colour) ───────────────

@@ -2,7 +2,7 @@
   "name": "ninja-runner",
   "displayName": "Ninja Runner",
   "description": "Universal development server runner - Auto-detect and run any frontend/backend projects",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "publisher": "akhilninja",
   "icon": "ninja-server-icon.png",
   "engines": {
@@ -44,6 +44,11 @@
         {
           "id": "serverRunnerView",
           "name": "Ninja Runner",
+          "when": "serverRunnerEnabled"
+        },
+        {
+          "id": "ninjaInfoView",
+          "name": "Today",
           "when": "serverRunnerEnabled"
         }
       ]
@@ -149,6 +154,11 @@
         "icon": "$(debug-alt)"
       },
       {
+        "command": "serverRunner.openInBrowser",
+        "title": "Open in Browser",
+        "icon": "$(link-external)"
+      },
+      {
         "command": "serverRunner.buildProject",
         "title": "Build Both (Staging + Prod)",
         "icon": "$(layers)"
@@ -177,6 +187,11 @@
         "command": "serverRunner.previousServer",
         "title": "Previous Server",
         "icon": "$(arrow-left)"
+      },
+      {
+        "command": "serverRunner.refreshInfoPanel",
+        "title": "Refresh",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -220,6 +235,11 @@
           "command": "serverRunner.checkForUpdates",
           "when": "view == serverRunnerView",
           "group": "settings@4"
+        },
+        {
+          "command": "serverRunner.refreshInfoPanel",
+          "when": "view == ninjaInfoView",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -242,6 +262,11 @@
           "command": "serverRunner.runInDebug",
           "when": "view == serverRunnerView && viewItem =~ /backend/",
           "group": "inline@4"
+        },
+        {
+          "command": "serverRunner.openInBrowser",
+          "when": "view == serverRunnerView && viewItem =~ /:frontend/",
+          "group": "inline@5"
         },
         {
           "command": "serverRunner.buildProjectStaging",

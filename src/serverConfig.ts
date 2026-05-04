@@ -6,6 +6,8 @@ export interface ServerConfig {
   workingDirectory: string;
   emoji: string;
   category: "Frontend Servers" | "Backend Servers";
+  /** Detected or configured port the server listens on (e.g. 8080, 3000) */
+  port?: number;
 }
 
 export class ServerConfigManager {

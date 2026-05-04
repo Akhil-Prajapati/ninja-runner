@@ -2,8 +2,9 @@
 # NINJA_RUNNER_VERSION=0.1.8
 # ──────────────────────────────────────────────────────────────────────────────
 #   Ninja Runner  |  Build Script
-#   Author : Maharshi Bhavsar
-#   Managed: Auto-updated by the Ninja Runner VS Code extension
+#   Author      : Maharshi Bhavsar  (core build.sh logic)
+#   Contributors: Chirag Patel      (WAR/ZIP build packaging logic)
+#   Managed     : Auto-updated by the Ninja Runner VS Code extension
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # Prerequisites:
@@ -194,6 +195,7 @@ echo -e "  ${GREEN}${BOLD}BUILD COMPLETE${RESET}  |  ${YELLOW}${env_folder}${RES
 line
 echo ""
 echo -e "  ${BOLD}Ninja Runner by @AkhilNinja${RESET}"
+echo -e "  Author: ${CYAN}Maharshi Bhavsar${RESET} (core build logic)  |  Contributor: ${CYAN}Chirag Patel${RESET} (WAR/ZIP packaging)"
 echo ""
 
 # ── Signal completion to the Ninja Runner extension ──────────────────────────

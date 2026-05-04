@@ -16,7 +16,7 @@
 ## 🚀 Quick Start
 
 1. **Open any workspace** containing frontend/backend projects
-2. **Click the 🥷 ninja icon** in the VS Code activity bar  
+2. **Click the 🥷 ninja icon** in the VS Code activity bar
 3. **Select which projects to run** from the auto-detected list
 4. **Your choices are saved** - next time just click to start all!
 5. **Manage servers** through the clean tree sidebar
@@ -24,6 +24,7 @@
 ## 🎯 Supported Project Types
 
 **Frontend Projects:**
+
 - ⚛️ React (Create React App, Next.js)
 - 🅰️ Angular (ng serve)
 - 💚 Vue.js (npm run dev)
@@ -31,6 +32,7 @@
 - 📦 Any Node.js project with package.json
 
 **Backend Projects:**
+
 - ☕ Spring Boot (Maven)
 - 🟢 Node.js/Express servers
 - 🐍 Python Django (coming soon)
@@ -39,6 +41,7 @@
 ## 📋 Essential Commands
 
 **Toolbar Actions:**
+
 - **� Auto Detect** - Scan workspace for projects
 - **▶️ Start All** - Launch all selected servers
 - **⏹️ Stop All** - Stop all running servers
@@ -46,17 +49,20 @@
 - **🔄 Refresh** - Update server status
 
 **Command Palette:** (`Ctrl+Shift+P`)
+
 - `Ninja: Add Server` - Add custom server
 - `Ninja: Install All Dependencies` - Install npm/Maven deps
 
 ## 🛠️ Installation
 
 Install from VS Code Marketplace:
+
 ```
 ext install akhilninja.ninja-runner
 ```
 
 Or install manually:
+
 ```bash
 code --install-extension ninja-runner-0.1.0.vsix
 ```
@@ -87,6 +93,13 @@ MIT License - Open source and free to use!
 
 **Akhil Ninja** - Creating developer productivity tools that make coding faster and more enjoyable!
 
+## 🤝 Contributors
+
+| Contributor          | Contribution                                 |
+| -------------------- | -------------------------------------------- |
+| **Chirag Patel**     | WAR/ZIP build packaging logic                |
+| **Maharshi Bhavsar** | Core `build.sh` scripting and build pipeline |
+
 ---
 
-*🥷 Happy Coding with Ninja Runner! ⚡*
+_🥷 Happy Coding with Ninja Runner! ⚡_

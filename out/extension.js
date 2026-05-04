@@ -27,8 +27,10 @@ exports.deactivate = exports.activate = void 0;
 const vscode = __importStar(require("vscode"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const net = __importStar(require("net"));
 const serverProvider_1 = require("./serverProvider");
 const serverConfig_1 = require("./serverConfig");
+const ninjaInfoProvider_1 = require("./ninjaInfoProvider");
 let terminals = {};
 let debugSessions = {};
 let debugPorts = {};
@@ -53,6 +55,10 @@ function activate(context) {
     context.subscriptions.push(vscode.window.registerFileDecorationProvider(decorationProvider));
     serverProvider = new serverProvider_1.ServerRunnerProvider(decorationProvider);
     vscode.window.registerTreeDataProvider("serverRunnerView", serverProvider);
+    // Register the Today panel (holiday + daily quote)
+    const infoProvider = new ninjaInfoProvider_1.NinjaInfoProvider();
+    vscode.window.registerTreeDataProvider("ninjaInfoView", infoProvider);
+    context.subscriptions.push(vscode.commands.registerCommand("serverRunner.refreshInfoPanel", () => infoProvider.refresh()), { dispose: () => infoProvider.dispose() });
     // Load saved user preferences
     loadUserPreferences();
     // Auto-detect projects on first activation only if no saved preferences
@@ -194,6 +200,21 @@ function activate(context) {
         }),
         vscode.commands.registerCommand("serverRunner.checkForUpdates", () => {
             checkForUpdates(extensionContext);
+        }),
+        vscode.commands.registerCommand("serverRunner.openInBrowser", (itemOrContextValue) => {
+            const contextValue = resolveContextValue(itemOrContextValue);
+            if (!contextValue) {
+                return;
+            }
+            const serverId = extractServerId(contextValue);
+            const serverConfig = configManager.getServerById(serverId);
+            const port = serverConfig?.port;
+            if (!port) {
+                vscode.window.showWarningMessage(`No port detected for ${serverConfig?.name ?? serverId}. Cannot open in browser.`);
+                return;
+            }
+            const url = vscode.Uri.parse(`http://localhost:${port}`);
+            vscode.env.openExternal(url);
         }),
         vscode.commands.registerCommand("serverRunner.runInDebug", (itemOrContextValue) => {
             const contextValue = resolveContextValue(itemOrContextValue);
@@ -970,6 +991,43 @@ function startServer(name, command, terminalKey) {
         terminals[terminalKey].show();
         return;
     }
+    // Check for port conflict before starting.
+    //
+    // Frontend frameworks (React, Next.js, Vue, Vite, Angular) auto-bump to the
+    // next free port (3000 → 3001 → 3002…) so a conflict is not fatal — we just
+    // log an informational note and let the framework handle it.
+    //
+    // Backend servers (Spring Boot etc.) do NOT auto-bump — they crash. So for
+    // backends we show a blocking warning before attempting to start.
+    const serverConfig = configManager.getServerById(terminalKey);
+    if (serverConfig?.port) {
+        isPortInUse(serverConfig.port).then((inUse) => {
+            if (inUse) {
+                if (serverConfig.type === "frontend") {
+                    // Frontend frameworks handle this themselves — just inform the user
+                    vscode.window.showInformationMessage(`ℹ️ Port ${serverConfig.port} is taken. ${name} will auto-select the next available port.`);
+                    doStartServer(name, command, terminalKey);
+                }
+                else {
+                    // Backend — hard warning with Start Anyway / Cancel
+                    vscode.window
+                        .showWarningMessage(`⚠️ Port ${serverConfig.port} is already in use. ${name} will likely fail to start. Check if another backend is already running on this port.`, "Start Anyway", "Cancel")
+                        .then((choice) => {
+                        if (choice === "Start Anyway") {
+                            doStartServer(name, command, terminalKey);
+                        }
+                    });
+                }
+            }
+            else {
+                doStartServer(name, command, terminalKey);
+            }
+        });
+        return;
+    }
+    doStartServer(name, command, terminalKey);
+}
+function doStartServer(name, command, terminalKey) {
     // Get workspace root
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
@@ -1758,6 +1816,201 @@ function convertCommandForShell(command) {
 function fixPathsInCommand(command) {
     return convertCommandForShell(command);
 }
+/**
+ * Scans common config files in a project to detect the port it will listen on.
+ * Checks (in order):
+ *   - src/main/resources/application.properties  → server.port
+ *   - src/main/resources/application-dev.properties → server.port
+ *   - package.json scripts / 'port' field
+ *   - angular.json serve options
+ *   - vite.config.ts / vite.config.js
+ * Returns the port number, or undefined if it cannot be determined.
+ */
+function detectServerPort(projectPath, framework) {
+    try {
+        // ── Spring Boot ──────────────────────────────────────────────────────────
+        if (framework.toLowerCase().includes("spring")) {
+            const candidates = [
+                path.join(projectPath, "src", "main", "resources", "application.properties"),
+                path.join(projectPath, "src", "main", "resources", "application-dev.properties"),
+                path.join(projectPath, "src", "main", "resources", "application-local.properties"),
+            ];
+            for (const propsPath of candidates) {
+                if (!fs.existsSync(propsPath)) {
+                    continue;
+                }
+                const content = fs.readFileSync(propsPath, "utf8");
+                const match = content.match(/^\s*server\.port\s*=\s*(\d+)/m);
+                if (match) {
+                    return parseInt(match[1], 10);
+                }
+            }
+            return 8080; // Spring Boot default
+        }
+        // ── Angular ──────────────────────────────────────────────────────────────
+        const angularJson = path.join(projectPath, "angular.json");
+        if (fs.existsSync(angularJson)) {
+            try {
+                const cfg = JSON.parse(fs.readFileSync(angularJson, "utf8"));
+                const projects = cfg.projects || {};
+                for (const proj of Object.values(projects)) {
+                    const port = proj?.architect?.serve?.options?.port;
+                    if (port) {
+                        return port;
+                    }
+                }
+            }
+            catch {
+                /* malformed json */
+            }
+            return 4200; // Angular default
+        }
+        // ── Vite ─────────────────────────────────────────────────────────────────
+        for (const cfg of ["vite.config.ts", "vite.config.js", "vite.config.mts"]) {
+            const vitePath = path.join(projectPath, cfg);
+            if (fs.existsSync(vitePath)) {
+                const content = fs.readFileSync(vitePath, "utf8");
+                const match = content.match(/port\s*:\s*(\d+)/);
+                if (match) {
+                    return parseInt(match[1], 10);
+                }
+                return 5173; // Vite default
+            }
+        }
+        // ── package.json (React / Node) ──────────────────────────────────────────
+        const pkgPath = path.join(projectPath, "package.json");
+        if (fs.existsSync(pkgPath)) {
+            try {
+                const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+                // explicit port field
+                if (pkg.port) {
+                    return parseInt(pkg.port, 10);
+                }
+                // PORT= inside scripts
+                const scripts = JSON.stringify(pkg.scripts || {});
+                const portMatch = scripts.match(/PORT=(\d+)/);
+                if (portMatch) {
+                    return parseInt(portMatch[1], 10);
+                }
+                // Next.js
+                if (pkg.dependencies?.next || pkg.devDependencies?.next) {
+                    return 3000;
+                }
+                // CRA
+                if (pkg.dependencies?.["react-scripts"] ||
+                    pkg.devDependencies?.["react-scripts"]) {
+                    return 3000;
+                }
+                // Vue CLI
+                if (pkg.devDependencies?.["@vue/cli-service"]) {
+                    return 8080;
+                }
+                // Generic React / frontend fallback — Next.js and CRA both default to 3000
+                if (framework.toLowerCase().includes("react") ||
+                    framework.toLowerCase().includes("next")) {
+                    return 3000;
+                }
+            }
+            catch {
+                /* malformed json */
+            }
+        }
+        // .env fallback
+        for (const envFile of [".env", ".env.local", ".env.dev"]) {
+            const envPath = path.join(projectPath, envFile);
+            if (!fs.existsSync(envPath)) {
+                continue;
+            }
+            const content = fs.readFileSync(envPath, "utf8");
+            const match = content.match(/^\s*PORT\s*=\s*(\d+)/m);
+            if (match) {
+                return parseInt(match[1], 10);
+            }
+        }
+        // Final framework-based defaults when nothing explicit was found
+        if (framework.toLowerCase().includes("react") ||
+            framework.toLowerCase().includes("next")) {
+            return 3000;
+        }
+        if (framework.toLowerCase().includes("vue")) {
+            return 8080;
+        }
+        if (framework.toLowerCase().includes("angular")) {
+            return 4200;
+        }
+        if (framework.toLowerCase().includes("vite")) {
+            return 5173;
+        }
+        if (framework.toLowerCase().includes("node")) {
+            return 3000;
+        }
+    }
+    catch (err) {
+        console.error("Error detecting server port:", err);
+    }
+    return undefined;
+}
+/**
+ * Returns a promise that resolves to true if the given TCP port is already
+ * in use on localhost, false otherwise.
+ */
+function isPortInUse(port) {
+    return new Promise((resolve) => {
+        const server = net.createServer();
+        server.once("error", (err) => {
+            resolve(err.code === "EADDRINUSE");
+        });
+        server.once("listening", () => {
+            server.close();
+            resolve(false);
+        });
+        server.listen(port, "127.0.0.1");
+    });
+}
+/**
+ * Detects the Spring active profile for a project.
+ *
+ * Logic:
+ *  1. Read src/main/resources/application.properties.
+ *  2. If `spring.profiles.active` is set to the Maven placeholder `@spring.profiles.active@`,
+ *     the value will NOT be substituted at runtime (only during `mvn package`).
+ *     In that case, resolve the real profile from pom.xml's <spring.profiles.active> property.
+ *  3. If pom.xml defines the property, return that value.
+ *  4. If pom.xml does NOT define it, return "dev" as a safe default.
+ *  5. If the placeholder is not used at all (a literal profile is already set), return null
+ *     so the command is left unchanged.
+ */
+function detectSpringActiveProfile(projectPath) {
+    try {
+        const appPropsPath = path.join(projectPath, "src", "main", "resources", "application.properties");
+        if (!fs.existsSync(appPropsPath)) {
+            return null;
+        }
+        const propsContent = fs.readFileSync(appPropsPath, "utf8");
+        // Check if the Maven placeholder is used for spring.profiles.active
+        const placeholderPattern = /^\s*spring\.profiles\.active\s*=\s*@spring\.profiles\.active@/m;
+        if (!placeholderPattern.test(propsContent)) {
+            return null; // Literal profile already set — nothing to fix
+        }
+        // Try to read the default profile from pom.xml <properties>
+        const pomPath = path.join(projectPath, "pom.xml");
+        if (fs.existsSync(pomPath)) {
+            const pomContent = fs.readFileSync(pomPath, "utf8");
+            const pomProfileMatch = pomContent.match(/<spring\.profiles\.active>\s*([^<\s]+)\s*<\/spring\.profiles\.active>/);
+            if (pomProfileMatch?.[1]) {
+                console.log(`🔍 Resolved Spring profile from pom.xml for ${projectPath}: ${pomProfileMatch[1]}`);
+                return pomProfileMatch[1];
+            }
+        }
+        // pom.xml doesn't define a default — fall back to "dev"
+        console.log(`🔍 No profile defined in pom.xml for ${projectPath}, defaulting to "dev"`);
+        return "dev";
+    }
+    catch (err) {
+        console.error("Error detecting Spring active profile:", err);
+        return null;
+    }
+}
 // Add detected project to configuration
 async function addDetectedProject(name, fullPath, type, framework) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
@@ -1791,8 +2044,12 @@ async function addDetectedProject(name, fullPath, type, framework) {
     else {
         // Backend commands
         if (framework.toLowerCase().includes("spring")) {
-            // Use mvn spring-boot:run with additional error handling flags
-            command = `cd ${terminalPath} && mvn spring-boot:run -Dspring-boot.run.fork=false`;
+            // Detect if the project uses @spring.profiles.active@ placeholder and resolve the profile
+            const resolvedProfile = detectSpringActiveProfile(fullPath);
+            const profileFlag = resolvedProfile
+                ? ` -Dspring-boot.run.profiles=${resolvedProfile}`
+                : "";
+            command = `cd ${terminalPath} && mvn spring-boot:run -Dspring-boot.run.fork=false${profileFlag}`;
             console.log(`🔧 Using enhanced Spring Boot command for ${name}: ${command}`);
         }
         else if (framework.toLowerCase().includes("express") ||
@@ -1840,6 +2097,8 @@ async function addDetectedProject(name, fullPath, type, framework) {
     }
     const id = configManager.generateUniqueId(name);
     const category = type === "frontend" ? "Frontend Servers" : "Backend Servers";
+    // Detect the port this server will use
+    const detectedPort = detectServerPort(fullPath, framework);
     const newServer = {
         id,
         name: `${name} (${framework})`,
@@ -1848,6 +2107,7 @@ async function addDetectedProject(name, fullPath, type, framework) {
         workingDirectory: relativePath,
         emoji,
         category: category,
+        port: detectedPort,
     };
     // Check if already exists
     const existing = configManager
@@ -1961,7 +2221,16 @@ function loadUserPreferences() {
     if (savedServers && savedServers.length > 0) {
         // Clear current servers and load saved ones
         configManager.clearAllServers();
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
         savedServers.forEach((server) => {
+            // Re-detect port for servers saved before port-tracking was added
+            if (!server.port) {
+                const fullPath = path.join(workspaceRoot, server.workingDirectory);
+                // Extract framework from name: "Auth Frontend (React/Next.js)" → "React/Next.js"
+                const frameworkMatch = server.name.match(/\(([^)]+)\)$/);
+                const framework = frameworkMatch?.[1] ?? server.type;
+                server.port = detectServerPort(fullPath, framework);
+            }
             configManager.addServer(server);
         });
         serverProvider.refresh();

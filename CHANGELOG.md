@@ -1,5 +1,30 @@
 # Change Log
 
+## [0.2.0] - 2026-05-04 - Port Tracking, Browser Launch & Today Panel
+
+### 🌐 Port Tracking & Browser Launch
+
+- ✅ **Auto port detection** — scans `application.properties`, `angular.json`, `vite.config.*`, `package.json`, `.env` for each project's port on add
+- ✅ **Open in browser button** — inline `$(link-external)` button on every **frontend** server item opens `http://localhost:PORT` directly
+- ✅ **On-the-fly port resolution** — if a server was saved before port-tracking existed, port is detected at click-time using framework name + project files
+- ✅ **Framework defaults** — React/Next.js → 3000, Angular → 4200, Vite → 5173, Vue → 8080, Spring Boot → 8080
+- ✅ **Port conflict detection** — TCP check before start; frontend shows info toast and starts anyway, backend shows blocking warning with _Start Anyway / Cancel_
+- ✅ **Port shown in tree** — server items display `Running · :3000` / `Stopped · :3000` and tooltip shows `http://localhost:3000`
+
+### 📅 Today Panel
+
+- ✅ **Gujarat holiday indicator** — fetches Gujarat public holidays from ICS calendar; shows holiday name + 🌸 if today is a holiday, otherwise "No holiday today — ship it!"
+- ✅ **Daily dev quote** — 90 curated quotes (Classics / Funny but true / Wisdom / Motivational) rotate by day-of-year
+- ✅ **Multi-line quote card** — word-wrapped at 36 chars with ❝ / ❞ marks and `— Author` footer
+- ✅ **Midnight auto-refresh** — panel refreshes automatically at midnight; manual refresh via `$(refresh)` title button
+
+### 🔧 Fixes
+
+- ✅ Backfill ports on load — servers restored from workspace state get port re-detected automatically at startup
+- ✅ Open in browser removed from **backend** server items (API servers don't need browser launch)
+
+---
+
 ## [0.1.8] - 2026-05-02 - Build Manager Overhaul & New Icon
 
 ### 🏗️ Build Manager
