@@ -2692,42 +2692,74 @@ function detectSpringActiveProfile(projectPath: string): string | null {
       "application.properties",
     );
 
-    if (!fs.existsSync(appPropsPath)) {
-      return null;
+    if (fs.existsSync(appPropsPath)) {
+      const propsContent = fs.readFileSync(appPropsPath, "utf8");
+
+      // Check if it's using Maven placeholder @spring.profiles.active@
+      const isMavenPlaceholder = propsContent.includes(
+        "@spring.profiles.active@",
+      );
+
+      if (!isMavenPlaceholder) {
+        // It's a literal value — just read it directly
+        const literalMatch = propsContent.match(
+          /^\s*spring\.profiles\.active\s*=\s*([^\s@][^\s]*)\s*$/m,
+        );
+        if (literalMatch?.[1]) {
+          console.log(`🔍 Literal profile found: ${literalMatch[1]}`);
+          return literalMatch[1];
+        }
+      }
+
+      // It's a Maven placeholder — resolve from pom.xml
+      console.log(`🔍 Maven placeholder detected, resolving from pom.xml...`);
     }
 
-    const propsContent = fs.readFileSync(appPropsPath, "utf8");
-
-    // Check if the Maven placeholder is used for spring.profiles.active
-    const placeholderPattern =
-      /^\s*spring\.profiles\.active\s*=\s*@spring\.profiles\.active@/m;
-    if (!placeholderPattern.test(propsContent)) {
-      return null; // Literal profile already set — nothing to fix
-    }
-
-    // Try to read the default profile from pom.xml <properties>
+    // Read pom.xml — check both <properties> and <profiles>
     const pomPath = path.join(projectPath, "pom.xml");
     if (fs.existsSync(pomPath)) {
       const pomContent = fs.readFileSync(pomPath, "utf8");
-      const pomProfileMatch = pomContent.match(
+
+      // Check <properties> block first
+      const pomPropertyMatch = pomContent.match(
         /<spring\.profiles\.active>\s*([^<\s]+)\s*<\/spring\.profiles\.active>/,
       );
-      if (pomProfileMatch?.[1]) {
+      if (pomPropertyMatch?.[1]) {
         console.log(
-          `🔍 Resolved Spring profile from pom.xml for ${projectPath}: ${pomProfileMatch[1]}`,
+          `🔍 Profile from pom.xml <properties>: ${pomPropertyMatch[1]}`,
         );
-        return pomProfileMatch[1];
+        return pomPropertyMatch[1];
+      }
+
+      // Check <profiles> — find the activeByDefault one
+      const activeByDefaultMatch = pomContent.match(
+        /<activeByDefault>\s*true\s*<\/activeByDefault>/,
+      );
+      if (activeByDefaultMatch) {
+        // Extract the profile id that contains activeByDefault=true
+        const profileBlockMatch = pomContent.match(
+          /<profile>[\s\S]*?<activeByDefault>\s*true\s*<\/activeByDefault>[\s\S]*?<\/profile>/,
+        );
+        if (profileBlockMatch) {
+          const profileIdMatch = profileBlockMatch[0].match(
+            /<id>\s*([^<\s]+)\s*<\/id>/,
+          );
+          if (profileIdMatch?.[1]) {
+            console.log(
+              `🔍 Profile from pom.xml activeByDefault: ${profileIdMatch[1]}`,
+            );
+            return profileIdMatch[1];
+          }
+        }
       }
     }
 
-    // pom.xml doesn't define a default — fall back to "dev"
-    console.log(
-      `🔍 No profile defined in pom.xml for ${projectPath}, defaulting to "dev"`,
-    );
+    // Nothing found anywhere — fall back to "dev"
+    console.log(`🔍 No profile resolved, defaulting to "dev"`);
     return "dev";
   } catch (err) {
     console.error("Error detecting Spring active profile:", err);
-    return null;
+    return "dev";
   }
 }
 
@@ -3003,6 +3035,27 @@ function loadUserPreferences() {
         const frameworkMatch = server.name.match(/\(([^)]+)\)$/);
         const framework = frameworkMatch?.[1] ?? server.type;
         server.port = detectServerPort(fullPath, framework);
+      }
+      // Migrate: remove deprecated -Dspring-boot.run.fork=false from saved commands
+      if (server.command?.includes("-Dspring-boot.run.fork=false")) {
+        server.command = server.command.replace(
+          / -Dspring-boot\.run\.fork=false/g,
+          "",
+        );
+      }
+      // Migrate: add missing profile flag for saved Spring Boot commands
+      if (
+        server.command?.includes("spring-boot:run") &&
+        !server.command.includes("-Dspring-boot.run.profiles=")
+      ) {
+        const fullPath = path.join(workspaceRoot, server.workingDirectory);
+        const resolvedProfile = detectSpringActiveProfile(fullPath);
+        if (resolvedProfile) {
+          server.command = server.command.replace(
+            "spring-boot:run",
+            `spring-boot:run -Dspring-boot.run.profiles=${resolvedProfile}`,
+          );
+        }
       }
       configManager.addServer(server);
     });
