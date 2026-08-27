@@ -17,3 +17,5 @@ ninja-server.svg
 ninja.png
 RECENT-CHANGES.md
 .git/**
+.env
+.env.*
