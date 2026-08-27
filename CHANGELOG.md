@@ -1,6 +1,24 @@
 # Change Log
 
-## [0.2.0] - 2026-05-04 - Port Tracking, Browser Launch & Today Panel
+## [0.3.0] - 2026-08-27 - Port Kill Switch, Windows Fix, Real-Time Ctrl+C Status & Dev Dashboard
+
+### ⚡ Universal Port Kill Switch
+- ✅ **Interactive Port Kill Switch** (`serverRunner.killPort`) — type any custom port (`8080`, `3000`, `5432`) to forcefully kill blocking zombie processes across Windows, Linux, and macOS.
+- ✅ **Dev Dashboard Port Inspector** — real-time list of all workspace project ports with one-click inline **Free Port** action.
+
+### 🛡️ Critical Bug Fixes & Reliability
+- ✅ **Spring Boot Dev Profile Enforcement** — Spring Boot servers strictly pass `-Dspring-boot.run.profiles=dev -Dspring.profiles.active=dev` so Maven staging/prod builds never leak into local dev.
+- ✅ **Ctrl+C Server Stop Tracking** — port socket polling detects server shutdowns immediately even when the terminal shell remains open after Ctrl+C.
+- ✅ **VS Code / Extension Reload Recovery** — scans active ports and reconnects to open terminals on startup so servers don't falsely show as stopped.
+- ✅ **Permanent Windows Terminal Fix** — terminals open directly in project directories (`cwd`), executing clean commands without fragile `cd &&` syntax errors on Windows PowerShell.
+- ✅ **Notification Spam Removal** — silenced routine toast popups; status is cleanly reflected via TreeView badges and Status Bar.
+
+### 🥷 Revamped Ninja Dev Dashboard
+- ✅ **Git Workspace Tracker** — view active branch and uncommitted dirty change count for every project at a glance.
+- ✅ **Quick Endpoints** — direct one-click openers for Swagger UI (`/swagger-ui.html`), Actuator health, and local frontend web apps.
+- ✅ **Modern UI & Carbon Icons** — refreshed with modern VS Code ThemeIcons (`$(flame)`, `$(zap)`, `$(radio-tower)`, `$(git-branch)`).
+
+---
 
 ### 🌐 Port Tracking & Browser Launch
 

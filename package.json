@@ -1,8 +1,8 @@
 {
   "name": "ninja-runner",
   "displayName": "Ninja Runner",
-  "description": "Universal development server runner - Auto-detect and run any frontend/backend projects",
-  "version": "0.2.3",
+  "description": "Universal development server runner & dev dashboard - Auto-detect and manage any frontend/backend projects",
+  "version": "0.3.0",
   "publisher": "akhilninja",
   "icon": "ninja-server-icon.png",
   "engines": {
@@ -32,7 +32,8 @@
     "maven",
     "npm",
     "universal",
-    "auto-detect"
+    "auto-detect",
+    "port-killer"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -43,12 +44,12 @@
       "serverRunner": [
         {
           "id": "serverRunnerView",
-          "name": "Ninja Runner",
+          "name": "Servers & Builds",
           "when": "serverRunnerEnabled"
         },
         {
           "id": "ninjaInfoView",
-          "name": "Today",
+          "name": "Dev Dashboard",
           "when": "serverRunnerEnabled"
         }
       ]
@@ -79,9 +80,9 @@
         "icon": "$(search)"
       },
       {
-        "command": "serverRunner.setupProjects",
-        "title": "Setup Projects",
-        "icon": "$(gear)"
+        "command": "serverRunner.killPort",
+        "title": "Kill Port Process (Port Switch)",
+        "icon": "$(flame)"
       },
       {
         "command": "serverRunner.resetConfiguration",
@@ -119,16 +120,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "serverRunner.addServer",
-        "title": "Add New Server",
-        "icon": "$(add)"
-      },
-      {
-        "command": "serverRunner.editServer",
-        "title": "Edit Server",
-        "icon": "$(edit)"
-      },
-      {
         "command": "serverRunner.startDynamicServer",
         "title": "Start Server",
         "icon": "$(play)"
@@ -142,11 +133,6 @@
         "command": "serverRunner.stopServer",
         "title": "Stop Server",
         "icon": "$(stop)"
-      },
-      {
-        "command": "serverRunner.checkForUpdates",
-        "title": "Check for Updates",
-        "icon": "$(sync)"
       },
       {
         "command": "serverRunner.runInDebug",
@@ -174,24 +160,14 @@
         "icon": "$(rocket)"
       },
       {
-        "command": "serverRunner.showStatusBar",
-        "title": "Show Status Bar",
-        "icon": "$(dashboard)"
-      },
-      {
-        "command": "serverRunner.nextServer",
-        "title": "Next Server",
-        "icon": "$(arrow-right)"
-      },
-      {
-        "command": "serverRunner.previousServer",
-        "title": "Previous Server",
-        "icon": "$(arrow-left)"
-      },
-      {
         "command": "serverRunner.refreshInfoPanel",
-        "title": "Refresh",
+        "title": "Refresh Dashboard",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "serverRunner.openDinoGame",
+        "title": "Play Chrome Dino Runner",
+        "icon": "$(game)"
       }
     ],
     "menus": {
@@ -202,17 +178,17 @@
           "group": "navigation@1"
         },
         {
-          "command": "serverRunner.installAllDependencies",
+          "command": "serverRunner.startAllServers",
           "when": "view == serverRunnerView",
           "group": "navigation@2"
         },
         {
-          "command": "serverRunner.startAllServers",
+          "command": "serverRunner.stopAllServers",
           "when": "view == serverRunnerView",
           "group": "navigation@3"
         },
         {
-          "command": "serverRunner.stopAllServers",
+          "command": "serverRunner.installAllDependencies",
           "when": "view == serverRunnerView",
           "group": "navigation@4"
         },
@@ -232,14 +208,14 @@
           "group": "settings@3"
         },
         {
-          "command": "serverRunner.checkForUpdates",
-          "when": "view == serverRunnerView",
-          "group": "settings@4"
+          "command": "serverRunner.killPort",
+          "when": "view == ninjaInfoView",
+          "group": "navigation@1"
         },
         {
           "command": "serverRunner.refreshInfoPanel",
           "when": "view == ninjaInfoView",
-          "group": "navigation@1"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -254,18 +230,18 @@
           "group": "inline@2"
         },
         {
-          "command": "serverRunner.installDependencies",
-          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
+          "command": "serverRunner.openInBrowser",
+          "when": "view == serverRunnerView && viewItem =~ /:frontend/",
           "group": "inline@3"
         },
         {
           "command": "serverRunner.runInDebug",
-          "when": "view == serverRunnerView && viewItem =~ /backend/",
+          "when": "view == serverRunnerView && viewItem =~ /:backend/",
           "group": "inline@4"
         },
         {
-          "command": "serverRunner.openInBrowser",
-          "when": "view == serverRunnerView && viewItem =~ /:frontend/",
+          "command": "serverRunner.installDependencies",
+          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
           "group": "inline@5"
         },
         {
@@ -282,26 +258,26 @@
           "command": "serverRunner.buildProject",
           "when": "view == serverRunnerView && viewItem == build-project",
           "group": "inline@3"
-        },
-        {
-          "command": "serverRunner.installDependencies",
-          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
-          "group": "server@1"
-        },
-        {
-          "command": "serverRunner.editServer",
-          "when": "view == serverRunnerView && viewItem =~ /:frontend|:backend/",
-          "group": "server@2"
         }
       ],
       "commandPalette": [
         {
-          "command": "serverRunner.addServer",
-          "when": "view == serverRunnerView"
+          "command": "serverRunner.autoDetectProjects"
         },
         {
-          "command": "serverRunner.installAllDependencies",
-          "when": "view == serverRunnerView"
+          "command": "serverRunner.killPort"
+        },
+        {
+          "command": "serverRunner.startAllServers"
+        },
+        {
+          "command": "serverRunner.stopAllServers"
+        },
+        {
+          "command": "serverRunner.installAllDependencies"
+        },
+        {
+          "command": "serverRunner.resetConfiguration"
         }
       ]
     }

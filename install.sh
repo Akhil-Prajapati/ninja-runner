@@ -6,31 +6,30 @@ echo "🥷 Installing Ninja Runner Extension by akhilninja..."
 
 # Get the current directory
 EXTENSION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VSIX_FILE="$EXTENSION_DIR/ninja-runner-0.1.4.vsix"
+
+# Find latest vsix file
+VSIX_FILE=$(ls -t "$EXTENSION_DIR"/ninja-runner-*.vsix 2>/dev/null | head -n 1)
 
 # Check if the VSIX file exists
-if [ ! -f "$VSIX_FILE" ]; then
-    echo "Error: ninja-runner-0.1.4.vsix not found in $EXTENSION_DIR"
-    echo "Please make sure you've run 'vsce package' first."
+if [ -z "$VSIX_FILE" ] || [ ! -f "$VSIX_FILE" ]; then
+    echo "Error: No ninja-runner-*.vsix found in $EXTENSION_DIR"
+    echo "Please run 'npm run compile && npx vsce package --no-dependencies' first."
     exit 1
 fi
 
 # Install the extension
-echo "Installing extension from: $VSIX_FILE"
-code --install-extension "$VSIX_FILE"
+echo "Installing extension from: $(basename "$VSIX_FILE")"
+code --install-extension "$VSIX_FILE" || antigravity --install-extension "$VSIX_FILE" || echo "Please install manually via: code --install-extension $VSIX_FILE"
 
 if [ $? -eq 0 ]; then
-    echo "🎉 Ninja Runner Extension installed successfully!"
+    echo ""
+    echo "🎉 Ninja Runner Extension $(basename "$VSIX_FILE") installed successfully!"
     echo ""
     echo "🥷 To use the extension:"
-    echo "1. Restart VS Code or reload the window (Ctrl+Shift+P -> 'Developer: Reload Window')"
-    echo "2. Look for the '🥷 Ninja Runner' icon in the Activity Bar (left side panel)"
-    echo "3. Click on it to auto-detect your projects or add custom servers"
-    echo "4. Click on any server to launch it with ninja speed! ⚡"
-    echo ""
-    echo "Note: Works with React, Next.js, Spring Boot, Node.js and other development projects"
+    echo "1. Reload the window: Ctrl+Shift+P -> 'Developer: Reload Window'"
+    echo "2. Click the '🥷 Ninja Runner' icon in the Activity Bar on the left"
+    echo "3. Auto-detect your projects and run your servers with 1 click! ⚡"
 else
-    echo "❌ Failed to install the extension"
-    echo "Please make sure VS Code is installed and accessible via 'code' command"
-    exit 1
+    echo "❌ Could not auto-install."
+    echo "You can install it directly in VS Code: Extensions (Ctrl+Shift+X) -> ... (Views and More Actions) -> Install from VSIX... -> Select $(basename "$VSIX_FILE")"
 fi
